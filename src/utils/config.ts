@@ -35,6 +35,7 @@ export class Config {
   private isNeedRandSuffix: boolean;
   private isSingleQuote: boolean;
   private isOnlineTrans: boolean;
+  private isHookImport: boolean;
   private baiduAppid: string;
   private baiduSecrectKey: string;
   private fileReg: RegExp;
@@ -71,6 +72,8 @@ export class Config {
     this.prefixKey = null;// key前缀
     this.keyJoinStr = null; // key连接符
 
+    this.isHookImport = false;// 是否需要hook引入i18n
+
     this.isOnlineTrans = true;// 本地-是否支持在线翻译
     this.baiduAppid = '';// 百度翻译appid
     this.baiduSecrectKey = '';// 百度翻译密钥
@@ -96,7 +99,7 @@ export class Config {
               transSourcePaths, tempPaths, tempFileName, isOverWriteLocal, uncheckMissKeys,
               fileReg, isNeedRandSuffix, langPaths, isSingleQuote,
               isOnlineTrans, baiduAppid, baiduSecrectKey, prefixKey,
-              vueReg, keyJoinStr, keyBoundaryChars,
+              vueReg, keyJoinStr, keyBoundaryChars,isHookImport,
             } = config || {};
             this.projectName = projectName;
             this.projectShortName = projectShortName;
@@ -122,6 +125,7 @@ export class Config {
             this.baiduSecrectKey = baiduSecrectKey;
             this.prefixKey = typeof prefixKey === 'string' ? prefixKey : null;
             this.keyJoinStr = typeof keyJoinStr === 'string' ? keyJoinStr : null;
+            this.isHookImport = typeof isHookImport === 'boolean' ? isHookImport : this.isHookImport;
 
             // this.fileReg = fileReg || this.fileReg;
             this.vueReg = vueReg ? new RegExp(vueReg.slice(1, -1)) : this.vueReg;
@@ -161,6 +165,8 @@ export class Config {
       uncheckMissKeys: this.uncheckMissKeys,
       // key的引用是单引号还是双引号，默认是单引号
       isSingleQuote: this.isSingleQuote,
+      // 是否开启hook的i18n引入
+      isHookImport: this.isHookImport,
       // 是否开启在线翻译
       isOnlineTrans: this.isOnlineTrans,
       // 本地-百度翻译appid
@@ -193,6 +199,10 @@ export class Config {
 
   getLocalLangObj() {
     return this.localLangObj;
+  }
+
+  getIsHookImport() {
+    return this.isHookImport;
   }
 
   /**

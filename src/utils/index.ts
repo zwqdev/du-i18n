@@ -326,7 +326,7 @@ export class Utils {
    * @param data 
    * @param filePath 
    */
-  static handleScanAndInit(filePath: string, initLang: string[], quoteKeys: string[], defaultLang: string, prefixKey: string, isSingleQuote: boolean, keyBoundaryChars: string[], vueReg: RegExp, cb: Function) {
+  static handleScanAndInit(filePath: string, initLang: string[], quoteKeys: string[], defaultLang: string, prefixKey: string, isSingleQuote: boolean, keyBoundaryChars: string[], vueReg: RegExp, isHookImport: boolean, cb: Function) {
     try {
       // 判断当前文档是否包含i18n的引用
       if (vueReg.test(filePath)) {
@@ -337,7 +337,7 @@ export class Utils {
             console.log("chars", chars);
             if (!chars || !chars.length) { return; }
             // 获取新的文件内容
-            const newContent = Utils.getVueNewContent(data, chars, initLang, quoteKeys, prefixKey, isSingleQuote);
+            const newContent = Utils.getVueNewContent(data, chars, initLang, quoteKeys, prefixKey, isSingleQuote, isHookImport);
             FileIO.handleWriteStream(filePath, newContent, () => { });
             // 处理含有变量的key
             const varObj: any = Utils.getVarObj(chars);
@@ -371,7 +371,7 @@ export class Utils {
             console.log("chars", chars);
             if (!chars || !chars.length) { return; }
             // 获取新的文件内容
-            const newContent = Utils.getJSXNewContent(data, chars, quoteKeys, prefixKey, isSingleQuote);
+            const newContent = Utils.getJSXNewContent(data, chars, quoteKeys, prefixKey, isSingleQuote, isHookImport);
             FileIO.handleWriteStream(filePath, newContent, () => { });
             // 处理含有变量的key
             const varObj: any = Utils.getVarObj(chars);
@@ -547,6 +547,23 @@ export class Utils {
     return result;
   }
 
+
+  static insertImports(content: string, isSingleQuote: boolean) {
+    // 匹配所有 import 语句
+    const importRegex = /(import\s+.*?from\s+['"].*?['"];?\n)/g;
+    const imports = content.match(importRegex) || [];
+
+    const len = imports.length;
+    // 添加 i18n 导入
+    if (!imports.some(imp => imp.includes('@/i18n'))) {
+      const newImport = isSingleQuote ? `import i18n from '@/i18n';\n` : `import i18n from "@/i18n";\n`;
+      const lastImportIndex = content.lastIndexOf(imports[len - 1]) + imports[len - 1].length;
+      const newContent = content.slice(0, lastImportIndex) + newImport + content.slice(lastImportIndex);
+      return newContent;
+    }
+
+    return content;
+  }
   /**
    * 获取新的文件字符串，针对vue
    * @param data 
@@ -554,7 +571,7 @@ export class Utils {
    * @param notePositionList 
    * @returns 
    */
-  static getVueNewContent(data: string, chars: any[], initLang: string[], quoteKeys: string[], keyPrefix: string, isSingleQuote: boolean) {
+  static getVueNewContent(data: string, chars: any[], initLang: string[], quoteKeys: string[], keyPrefix: string, isSingleQuote: boolean, isHookImport: boolean) {
     // 将key写入i18n
     let newData = data;
     if (data && chars.length) {
@@ -662,11 +679,16 @@ export class Utils {
         newData = newData.slice(0, scriptStartIndex) + scriptStr + newData.slice(scriptEndIndex);
       };
 
+
       // // 将key写入i18n
       // handleI18N();
       // 将原文件替换$t('key')形式
       handleTemplate();
       handleScript();
+
+      if (isHookImport) {
+        newData = Utils.insertImports(newData, isSingleQuote);
+      }
     }
     return newData;
   }
@@ -735,7 +757,7 @@ export class Utils {
    * @param notePositionList 
    * @returns 
    */
-  static getJSXNewContent(data: string, chars: any[], quoteKeys: string[], keyPrefix: string, isSingleQuote: boolean) {
+  static getJSXNewContent(data: string, chars: any[], quoteKeys: string[], keyPrefix: string, isSingleQuote: boolean, isHookImport: boolean) {
     // 将key写入i18n
     let newData = data;
     if (data && chars.length) {
@@ -791,6 +813,10 @@ export class Utils {
 
       // 将原文件替换
       handleReplace();
+      
+      if (isHookImport) {
+        newData = Utils.insertImports(newData, isSingleQuote);
+      }
     }
     return newData;
   }

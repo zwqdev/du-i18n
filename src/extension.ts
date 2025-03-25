@@ -112,12 +112,13 @@ export async function activate(context: vscode.ExtensionContext) {
 						const isSingleQuote = config.getIsSingleQuote();
 						const keyBoundaryChars = config.getKeyBoundaryChars();
 						const vueReg = config.getVueReg();
-						console.log("vueReg", vueReg);
+						const isHookImport = config.getIsHookImport();
+						// console.log("vueReg", vueReg);
 						const handleRefresh = async () => {
 							await config.refreshGlobalLangObj();
 							VSCodeUI.renderDecoration(config);
 						};
-						Utils.handleScanAndInit(fileName, initLang, keys, defaultLang, prefixKey, isSingleQuote, keyBoundaryChars, vueReg, (newLangObj) => {
+						Utils.handleScanAndInit(fileName, initLang, keys, defaultLang, prefixKey, isSingleQuote, keyBoundaryChars, vueReg, isHookImport, (newLangObj) => {
 							if (!isEmpty(newLangObj)) {
 								FileIO.writeIntoTempFile(tempPaths, fileName, newLangObj, pageEnName, tempFileName, isNeedRandSuffix, async () => {
 									if (config.isOnline()) {
@@ -189,8 +190,9 @@ export async function activate(context: vscode.ExtensionContext) {
 									const isNeedRandSuffix = config.getIsNeedRandSuffix();
 									const keyBoundaryChars = config.getKeyBoundaryChars();
 									const vueReg = config.getVueReg();
+									const isHookImport = config.getIsHookImport();
 									
-									Utils.handleScanAndInit(fileName, initLang, keys, defaultLang, prefixKey, isSingleQuote, keyBoundaryChars, vueReg, (newLangObj) => {
+									Utils.handleScanAndInit(fileName, initLang, keys, defaultLang, prefixKey, isSingleQuote, keyBoundaryChars, vueReg, isHookImport, (newLangObj) => {
 										if (!isEmpty(newLangObj)) {
 											FileIO.writeIntoTempFile(tempPaths, fileName, newLangObj, pageEnName, tempFileName, isNeedRandSuffix, async () => {
 												if (config.isOnline()) {
