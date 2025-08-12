@@ -1,9 +1,9 @@
-import * as vscode from 'vscode';
-import { API } from './api';
-import { FileIO } from './fileIO';
-const fs = require('fs');
-const path = require('path');
-const isEmpty = require('lodash/isEmpty');
+import * as vscode from "vscode";
+import { API } from "./api";
+import { FileIO } from "./fileIO";
+const fs = require("fs");
+const path = require("path");
+const isEmpty = require("lodash/isEmpty");
 
 export class Config {
   private configFilePath: string;
@@ -41,95 +41,157 @@ export class Config {
   private fileReg: RegExp;
   private jsonReg: RegExp;
   private vueReg: RegExp;
+  private cookie: string;
 
   constructor(props: any = {}) {
-    this.configFilePath = `/du-i18n.config.json`;// du-i18n配置文件
-    this.projectName = '';// deyi项目名称
-    this.projectShortName = '';// deyi项目简称
-    this.onlineApiUrl = '';// 地址url
-    this.version = '';// deyi版本
-    this.langPaths = '**/src/i18n/locale/**';// 语言文件路径
-    this.transSourcePaths = '**/src/i18n/source/**';// 翻译源文件路径
-    this.tempPaths = '**/src/i18n/temp/**';// 新增翻译文案路径
-    this.tempFileName = '';// 指定生成json文件名
-    this.localLangFilePath = '/.language.md';// 拉取远程语言保存本地文件路径
-    this.missCheckResultPath = '/.languageMissLocal.md';// 翻译漏检本地文件路径
-    this.languageMissOnlinePath = '/.languageMissOnline.md';// 翻译漏检本地文件路径
-    this.localLangObj = {};// 本地语言数据
-    this.onlineLangObj = {};// 线上语言数据
+    // 默认将配置文件放在工作区的 .vscode 目录
+    this.configFilePath = `/.vscode/du-i18n.config.json`; // du-i18n配置文件（相对工作区根目录）
+    this.projectName = ""; // deyi项目名称
+    this.projectShortName = ""; // deyi项目简称
+    this.onlineApiUrl = ""; // 地址url
+    this.version = ""; // deyi版本
+    this.langPaths = "**/src/i18n/locale/**"; // 语言文件路径
+    this.transSourcePaths = "**/src/i18n/source/**"; // 翻译源文件路径
+    this.tempPaths = "**/src/i18n/temp/**"; // 新增翻译文案路径
+    this.tempFileName = ""; // 指定生成json文件名
+    this.localLangFilePath = "/.language.md"; // 拉取远程语言保存本地文件路径
+    this.missCheckResultPath = "/.languageMissLocal.md"; // 翻译漏检本地文件路径
+    this.languageMissOnlinePath = "/.languageMissOnline.md"; // 翻译漏检本地文件路径
+    this.localLangObj = {}; // 本地语言数据
+    this.onlineLangObj = {}; // 线上语言数据
     this.transSourceObj = {}; // key为中文的翻译源文案
-    this.multiFolders = ['src', 'pages'];// 复杂文件夹
-    this.defaultLang = 'zh';// 默认语言
+    this.multiFolders = ["src", "pages"]; // 复杂文件夹
+    this.defaultLang = "zh"; // 默认语言
     this.pullLangs = []; // 指定翻译扩展的语言，优先级比tempLangs高，远程不允许覆盖
-    this.tempLangs = ['zh', 'en'];// 翻译扩展语言，远程的会覆盖
+    this.tempLangs = ["zh", "en"]; // 翻译扩展语言，远程的会覆盖
     this.quoteKeys = ["this.$t", "$t", "i18n.t"]; // 引用key
-    this.keyBoundaryChars = ['\n', '>', '<', '}', '{', '(', ')']; // 引用key的边界字符
-    this.bigFileLineCount = 1000;// 大文件行数
-    this.isOverWriteLocal = false;// 是否覆盖本地已填写的翻译
-    this.uncheckMissKeys = [];// 跳过翻译漏检机制的key，打标已翻译
-    this.isNeedRandSuffix = true;// tempPaths下的文件是否生成文件名后缀
-    this.isSingleQuote = true;// key的引用是单引号还是双引号，默认是单引号
-    this.prefixKey = null;// key前缀
+    this.keyBoundaryChars = ["\n", ">", "<", "}", "{", "(", ")"]; // 引用key的边界字符
+    this.bigFileLineCount = 1000; // 大文件行数
+    this.isOverWriteLocal = false; // 是否覆盖本地已填写的翻译
+    this.uncheckMissKeys = []; // 跳过翻译漏检机制的key，打标已翻译
+    this.isNeedRandSuffix = true; // tempPaths下的文件是否生成文件名后缀
+    this.isSingleQuote = true; // key的引用是单引号还是双引号，默认是单引号
+    this.prefixKey = null; // key前缀
     this.keyJoinStr = null; // key连接符
 
-    this.isHookImport = false;// 是否需要hook引入i18n
+    this.isHookImport = false; // 是否需要hook引入i18n
 
-    this.isOnlineTrans = true;// 本地-是否支持在线翻译
-    this.baiduAppid = '';// 百度翻译appid
-    this.baiduSecrectKey = '';// 百度翻译密钥
+    this.isOnlineTrans = true; // 本地-是否支持在线翻译
+    this.baiduAppid = ""; // 百度翻译appid
+    this.baiduSecrectKey = ""; // 百度翻译密钥
 
     this.fileReg = /\.(ts|js|tsx|jsx|vue|html|mpx)$/; // 识别的文件
     this.jsonReg = /\.(json)$/; // json文件
     this.vueReg = /\.(vue)$/; // vue文件
+    this.cookie = ""; // cookie
   }
   async readConfig() {
-    const files = await FileIO.getFiles('**' + this.configFilePath);
-    // TODO: 暂时只支持一个配置文件，多个会冲突，需要优化
+    // 优先直接读取工作区 .vscode/du-i18n.config.json（绝对路径）
+    let configAbsPath = this.configFilePath;
+    if (!path.isAbsolute(configAbsPath)) {
+      const folders = vscode.workspace.workspaceFolders;
+      if (folders && folders.length) {
+        configAbsPath = path.join(folders[0].uri.fsPath, configAbsPath);
+      }
+    }
+
+    const applyConfig = (config: any) => {
+      const {
+        projectName,
+        projectShortName,
+        onlineApiUrl,
+        version,
+        multiFolders,
+        bigFileLineCount,
+        pullLangs,
+        tempLangs,
+        defaultLang,
+        quoteKeys,
+        transSourcePaths,
+        tempPaths,
+        tempFileName,
+        isOverWriteLocal,
+        uncheckMissKeys,
+        fileReg,
+        isNeedRandSuffix,
+        langPaths,
+        isSingleQuote,
+        isOnlineTrans,
+        baiduAppid,
+        baiduSecrectKey,
+        prefixKey,
+        vueReg,
+        keyJoinStr,
+        keyBoundaryChars,
+        isHookImport,
+        cookie = "",
+      } = config || {};
+      this.cookie = cookie;
+      this.projectName = projectName;
+      this.projectShortName = projectShortName;
+      this.onlineApiUrl = onlineApiUrl;
+      this.version = version;
+      this.multiFolders = multiFolders;
+      this.bigFileLineCount = bigFileLineCount || this.bigFileLineCount;
+      this.pullLangs = Array.isArray(pullLangs) ? pullLangs : this.pullLangs;
+      this.tempLangs =
+        Array.isArray(tempLangs) && tempLangs.length
+          ? tempLangs
+          : this.tempLangs;
+      this.defaultLang = defaultLang || this.tempLangs[0];
+      this.quoteKeys =
+        Array.isArray(quoteKeys) && quoteKeys.length
+          ? quoteKeys
+          : this.quoteKeys;
+      this.keyBoundaryChars =
+        Array.isArray(keyBoundaryChars) && keyBoundaryChars.length
+          ? keyBoundaryChars
+          : this.keyBoundaryChars;
+      this.transSourcePaths = transSourcePaths || this.transSourcePaths;
+      this.tempPaths = tempPaths || this.tempPaths;
+      this.tempFileName = tempFileName;
+      this.isOverWriteLocal = !!isOverWriteLocal;
+      this.uncheckMissKeys =
+        Array.isArray(uncheckMissKeys) && uncheckMissKeys.length
+          ? uncheckMissKeys
+          : [];
+      this.isNeedRandSuffix =
+        typeof isNeedRandSuffix === "boolean"
+          ? isNeedRandSuffix
+          : this.isNeedRandSuffix;
+      this.langPaths = langPaths || this.langPaths;
+      this.isSingleQuote =
+        typeof isSingleQuote === "boolean" ? isSingleQuote : this.isSingleQuote;
+      this.isOnlineTrans =
+        typeof isOnlineTrans === "boolean" ? isOnlineTrans : this.isOnlineTrans;
+      this.baiduAppid = baiduAppid;
+      this.baiduSecrectKey = baiduSecrectKey;
+      this.prefixKey = typeof prefixKey === "string" ? prefixKey : null;
+      this.keyJoinStr = typeof keyJoinStr === "string" ? keyJoinStr : null;
+      this.isHookImport =
+        typeof isHookImport === "boolean" ? isHookImport : this.isHookImport;
+      // this.fileReg = fileReg || this.fileReg;
+      this.vueReg = vueReg ? new RegExp(vueReg.slice(1, -1)) : this.vueReg;
+    };
+
+    try {
+      if (fs.existsSync(configAbsPath)) {
+        const data = fs.readFileSync(configAbsPath, "utf-8");
+        if (data) applyConfig(eval(`(${data})`));
+        return; // 已读取 .vscode 下配置
+      }
+    } catch (e) {
+      console.error("read .vscode config error", e);
+    }
+
+    // 兼容旧路径：在工作区内查找 du-i18n.config.json（排除 .vscode 目录）
+    const files = await FileIO.getFiles("**/du-i18n.config.json");
     files.forEach(({ fsPath }) => {
       const fileName = path.basename(fsPath);
       if (/\.(json)$/.test(fileName)) {
         try {
-          const data = fs.readFileSync(fsPath, 'utf-8');
-          if (data) {
-            const config = eval(`(${data})`);
-            // console.log("config", config);
-            const {
-              projectName, projectShortName, onlineApiUrl, version, multiFolders,
-              bigFileLineCount, pullLangs, tempLangs, defaultLang, quoteKeys,
-              transSourcePaths, tempPaths, tempFileName, isOverWriteLocal, uncheckMissKeys,
-              fileReg, isNeedRandSuffix, langPaths, isSingleQuote,
-              isOnlineTrans, baiduAppid, baiduSecrectKey, prefixKey,
-              vueReg, keyJoinStr, keyBoundaryChars,isHookImport,
-            } = config || {};
-            this.projectName = projectName;
-            this.projectShortName = projectShortName;
-            this.onlineApiUrl = onlineApiUrl;
-            this.version = version;
-            this.multiFolders = multiFolders;
-            this.bigFileLineCount = bigFileLineCount || this.bigFileLineCount;
-            this.pullLangs = Array.isArray(pullLangs) ? pullLangs : this.pullLangs;
-            this.tempLangs = Array.isArray(tempLangs) && tempLangs.length ? tempLangs : this.tempLangs;
-            this.defaultLang = defaultLang || this.tempLangs[0];
-            this.quoteKeys = Array.isArray(quoteKeys) && quoteKeys.length ? quoteKeys : this.quoteKeys;
-            this.keyBoundaryChars = Array.isArray(keyBoundaryChars) && keyBoundaryChars.length ? keyBoundaryChars : this.keyBoundaryChars;
-            this.transSourcePaths = transSourcePaths || this.transSourcePaths;
-            this.tempPaths = tempPaths || this.tempPaths;
-            this.tempFileName = tempFileName;
-            this.isOverWriteLocal = !!isOverWriteLocal;
-            this.uncheckMissKeys = Array.isArray(uncheckMissKeys) && uncheckMissKeys.length ? uncheckMissKeys : [];
-            this.isNeedRandSuffix = typeof isNeedRandSuffix === 'boolean' ? isNeedRandSuffix : this.isNeedRandSuffix;
-            this.langPaths = langPaths || this.langPaths;
-            this.isSingleQuote = typeof isSingleQuote === 'boolean' ? isSingleQuote : this.isSingleQuote;
-            this.isOnlineTrans = typeof isOnlineTrans === 'boolean' ? isOnlineTrans : this.isOnlineTrans;
-            this.baiduAppid = baiduAppid;
-            this.baiduSecrectKey = baiduSecrectKey;
-            this.prefixKey = typeof prefixKey === 'string' ? prefixKey : null;
-            this.keyJoinStr = typeof keyJoinStr === 'string' ? keyJoinStr : null;
-            this.isHookImport = typeof isHookImport === 'boolean' ? isHookImport : this.isHookImport;
-
-            // this.fileReg = fileReg || this.fileReg;
-            this.vueReg = vueReg ? new RegExp(vueReg.slice(1, -1)) : this.vueReg;
-          }
+          const data = fs.readFileSync(fsPath, "utf-8");
+          if (data) applyConfig(eval(`(${data})`));
         } catch (e) {
           console.error(e);
         }
@@ -173,10 +235,14 @@ export class Config {
       baiduAppid: this.baiduAppid,
       // 本地-百度翻译密钥
       baiduSecrectKey: this.baiduSecrectKey,
+      // cookie
+      cookie: this.cookie,
     };
     return initConfig;
   }
-
+  getCookie() {
+    return this.cookie;
+  }
   getConfigFilePath() {
     return this.configFilePath;
   }
@@ -208,7 +274,7 @@ export class Config {
   /**
    * 判断是否属于公司内部项目
    * 与外部无关，请忽略
-   * @returns 
+   * @returns
    */
   isOnline() {
     return this.onlineApiUrl;
@@ -228,9 +294,9 @@ export class Config {
 
   getQuoteKeysStr() {
     if (Array.isArray(this.quoteKeys) && this.quoteKeys.length) {
-      return this.quoteKeys.join(',');
+      return this.quoteKeys.join(",");
     }
-    return '';
+    return "";
   }
 
   getKeyBoundaryChars() {
@@ -255,9 +321,9 @@ export class Config {
 
   getTranslateLangs() {
     if (this.pullLangs && this.pullLangs.length) {
-      return this.pullLangs.filter(lang => lang !== this.defaultLang);
+      return this.pullLangs.filter((lang) => lang !== this.defaultLang);
     }
-    return this.tempLangs.filter(lang => lang !== this.defaultLang);
+    return this.tempLangs.filter((lang) => lang !== this.defaultLang);
   }
 
   getTempPaths() {
@@ -312,7 +378,7 @@ export class Config {
     return this.vueReg;
   }
 
-  getCurLangObj(userKey: string = '') {
+  getCurLangObj(userKey: string = "") {
     const lang = userKey || this.getDefaultLang();
     const langObj = this.isOnline() ? this.onlineLangObj : this.localLangObj;
     return langObj[lang];
@@ -326,7 +392,7 @@ export class Config {
           const fileName = path.basename(fsPath);
           if (/\.(json)$/.test(fileName)) {
             try {
-              const data = fs.readFileSync(fsPath, 'utf-8');
+              const data = fs.readFileSync(fsPath, "utf-8");
               if (data) {
                 const langObj = eval(`(${data})`);
                 if (!isEmpty(langObj)) {
@@ -353,9 +419,9 @@ export class Config {
         langFiles.forEach(({ fsPath }) => {
           const fileName = path.basename(fsPath);
           if (/\.(json)$/.test(fileName)) {
-            const lang = fileName.split('.')[0];
+            const lang = fileName.split(".")[0];
             try {
-              const data = fs.readFileSync(fsPath, 'utf-8');
+              const data = fs.readFileSync(fsPath, "utf-8");
               if (data) {
                 const langObj = eval(`(${data})`);
                 if (!isEmpty(langObj)) {
@@ -363,7 +429,8 @@ export class Config {
                     this.localLangObj[lang] = {};
                   }
                   Object.entries(langObj).forEach(([k, v]) => {
-                    this.localLangObj[lang][k] = v || this.localLangObj[lang][k] || '';
+                    this.localLangObj[lang][k] =
+                      v || this.localLangObj[lang][k] || "";
                   });
                 }
               }
@@ -381,7 +448,7 @@ export class Config {
   async refreshGlobalLangObj(isAll: boolean = false) {
     if (this.isOnline()) {
       // 读取在线语言库
-      await this.getOnlineLanguage('', isAll);
+      await this.getOnlineLanguage("", isAll);
     } else {
       // 读取全局语言包
       await this.readLocalGlobalLangObj();
@@ -396,8 +463,12 @@ export class Config {
     fs.access(configPath, async function (err) {
       // console.log('err', err);
       let isInit = false;
-      if (err) {// 不存在
-        await FileIO.writeContentToLocalFile(fileName, configFilePath, initConfigObj);
+      if (err) {
+        // 不存在
+        // 确保 .vscode 目录创建后再写入
+        const dir = path.dirname(configPath);
+        const base = path.basename(configPath);
+        await FileIO.writeContentToLocalFile2(dir, base, initConfigObj);
         isInit = true;
       }
       vscode.workspace.openTextDocument(configPath).then((doc) => {
@@ -413,19 +484,27 @@ export class Config {
 
   checkProjectConfig() {
     if (!this.projectName) {
-      vscode.window.showWarningMessage('请先在du-i18n.config.json中配置得译平台对应的项目名称');
+      vscode.window.showWarningMessage(
+        "请先在du-i18n.config.json中配置得译平台对应的项目名称"
+      );
       return false;
     }
     if (!this.projectShortName) {
-      vscode.window.showWarningMessage('请先在du-i18n.config.json中配置得译平台对应的项目简称');
+      vscode.window.showWarningMessage(
+        "请先在du-i18n.config.json中配置得译平台对应的项目简称"
+      );
       return false;
     }
     if (!this.onlineApiUrl) {
-      vscode.window.showWarningMessage('请先在du-i18n.config.json中配置得译平台url请求地址');
+      vscode.window.showWarningMessage(
+        "请先在du-i18n.config.json中配置得译平台url请求地址"
+      );
       return false;
     }
     if (!this.version) {
-      vscode.window.showWarningMessage('请先在du-i18n.config.json中配置得译平台对应项目的版本');
+      vscode.window.showWarningMessage(
+        "请先在du-i18n.config.json中配置得译平台对应项目的版本"
+      );
       return false;
     }
     return true;
@@ -434,16 +513,16 @@ export class Config {
   // 设置翻译源文案
   async setTransSourceObj(cb: Function, isCheck: boolean = true) {
     let sourceData = {};
-    // 源文件 
+    // 源文件
     const files = await FileIO.getFiles(this.transSourcePaths);
     let inValidType = false;
     // console.log("files", files);
     files.forEach(({ fsPath }) => {
       const fileName = path.basename(fsPath);
-      const lang = fileName.split('.')[0];
+      const lang = fileName.split(".")[0];
       if (/\.(json)$/.test(fileName)) {
         inValidType = true;
-        const data = fs.readFileSync(fsPath, 'utf-8');
+        const data = fs.readFileSync(fsPath, "utf-8");
         if (data) {
           const obj = eval(`(${data})`);
           sourceData[lang] = {
@@ -452,11 +531,12 @@ export class Config {
         }
       }
     });
-    if (this.isOnline()) {// 线上与本地合并
+    if (this.isOnline()) {
+      // 线上与本地合并
       if (this.defaultLang) {
         const defaultLangObj = this.onlineLangObj[this.defaultLang] || {};
         const translateLangs = this.getTranslateLangs();
-        translateLangs.forEach(lang => {
+        translateLangs.forEach((lang) => {
           const langObj = this.onlineLangObj[lang] || {};
           const localLangObj = sourceData[lang] || {};
           const langSourceObj = {};
@@ -472,10 +552,13 @@ export class Config {
           };
         });
       }
-    } else {// 本地
+    } else {
+      // 本地
       if (!inValidType && isCheck) {
-        const pathName = this.transSourcePaths.replace(/\*/g, '');
-        vscode.window.showWarningMessage(`缺少翻译源文件，请先在${pathName}下配置翻译源文件，文件名是语言（如${pathName}CN-en.json）`);
+        const pathName = this.transSourcePaths.replace(/\*/g, "");
+        vscode.window.showWarningMessage(
+          `缺少翻译源文件，请先在${pathName}下配置翻译源文件，文件名是语言（如${pathName}CN-en.json）`
+        );
       }
     }
     // console.log('sourceData', sourceData);
@@ -486,9 +569,9 @@ export class Config {
   /**
    * 翻译漏检
    * @param type 类型 fileName|filePath
-   * @returns 
+   * @returns
    */
-  async handleMissingDetection(type: string = 'fileName') {
+  async handleMissingDetection(type: string = "fileName") {
     let result = null;
     try {
       const files = await FileIO.getFiles(this.tempPaths);
@@ -499,7 +582,7 @@ export class Config {
         files.forEach(({ fsPath }) => {
           const fileName = path.basename(fsPath);
           if (/\.(json)$/.test(fileName)) {
-            const data = fs.readFileSync(fsPath, 'utf-8');
+            const data = fs.readFileSync(fsPath, "utf-8");
             if (data) {
               const langObj = eval(`(${data})`);
               if (!isEmpty(langObj)) {
@@ -510,7 +593,8 @@ export class Config {
                   if (lang !== defaultLang) {
                     Object.entries(obj).forEach(([k, v]) => {
                       if (!this.uncheckMissKeys.includes(k)) {
-                        if (!v) {// 缺少翻译
+                        if (!v) {
+                          // 缺少翻译
                           if (!newObj[defaultLang]) {
                             newObj[defaultLang] = {};
                           }
@@ -519,8 +603,9 @@ export class Config {
                           }
                           newObj[defaultLang][k] = defaultLangObj[k];
                           newObj[lang][k] = v;
-                          if (type === 'fileName') {
-                            defaultKeyObj[defaultLangObj[k]] = defaultLangObj[k];
+                          if (type === "fileName") {
+                            defaultKeyObj[defaultLangObj[k]] =
+                              defaultLangObj[k];
                           }
                         }
                       }
@@ -528,7 +613,7 @@ export class Config {
                   }
                 });
                 if (!isEmpty(newObj)) {
-                  if (type === 'fileName') {
+                  if (type === "fileName") {
                     result[fileName] = newObj;
                   } else {
                     result[fsPath] = newObj;
@@ -538,9 +623,9 @@ export class Config {
             }
           }
         });
-        
-        if (!isEmpty(defaultKeyObj) && type === 'fileName') {
-          result['missTranslateKeys'] = Object.keys(defaultKeyObj);
+
+        if (!isEmpty(defaultKeyObj) && type === "fileName") {
+          result["missTranslateKeys"] = Object.keys(defaultKeyObj);
         }
       }
     } catch (e) {
@@ -553,13 +638,13 @@ export class Config {
    * 生成pageEnName的规则
    * 1）公共组件src/components/
    * 2）page模块中，最近一层包含components作为一个模块
-   * @param filePath 
-   * @returns 
+   * @param filePath
+   * @returns
    */
   generatePageEnName(filePath: string) {
     try {
-      if (FileIO.isIncludePath(filePath, 'src/components/')) {
-        return 'src-components';
+      if (FileIO.isIncludePath(filePath, "src/components/")) {
+        return "src-components";
       } else {
         let dirName = path.dirname(filePath);
         let curDir = dirName.split(path.sep).slice(-1)[0];
@@ -576,28 +661,35 @@ export class Config {
     } catch (e) {
       console.log("generatePageEnName", e);
     }
-    return '';
+    return "";
   }
 
   getBasePrefix(pageEnName: string) {
     if (this.projectShortName && pageEnName) {
       return `${this.projectShortName}_${pageEnName}_`;
     }
-    return '';
+    return "";
   }
 
-  getKeyPrefix(filePath: string, index: string = '') {
+  getKeyPrefix(filePath: string, index: string = "") {
     let dirName = path.dirname(filePath);
     dirName = dirName.split(path.sep).slice(-1)[0];
     let fileName = path.basename(filePath);
-    fileName = fileName.split('.')[0];
-    let key = typeof this.prefixKey === 'string' ? this.prefixKey : (this.keyJoinStr !== null ? `${dirName}${this.keyJoinStr}${fileName}` : `${dirName}.${fileName}`);
+    fileName = fileName.split(".")[0];
+    let key =
+      typeof this.prefixKey === "string"
+        ? this.prefixKey
+        : this.keyJoinStr !== null
+        ? `${dirName}${this.keyJoinStr}${fileName}`
+        : `${dirName}.${fileName}`;
     const rand = Date.now().toString().substr(-5);
     const rand2 = index || Math.floor(Math.random() * 10);
-    return this.keyJoinStr !== null ? `${key}${this.keyJoinStr}${rand}${rand2}${this.keyJoinStr}` : `${key}.${rand}${rand2}-`;
+    return this.keyJoinStr !== null
+      ? `${key}${this.keyJoinStr}${rand}${rand2}${this.keyJoinStr}`
+      : `${key}.${rand}${rand2}-`;
   }
 
-  getPrefixKey(fsPath: string, index: string = '') {
+  getPrefixKey(fsPath: string, index: string = "") {
     const pageEnName = this.generatePageEnName(fsPath);
     const basePrefix = this.getBasePrefix(pageEnName);
     const secondPrefix = this.getKeyPrefix(fsPath, index);
@@ -607,30 +699,36 @@ export class Config {
 
   /**
    * 搜索未翻译的目标语言
-   * @param fromLang 
-   * @param toLang 
+   * @param fromLang
+   * @param toLang
    * @param isDeyi 是否属于内部翻译
-   * @returns 
+   * @returns
    */
-  async searchUntranslateText(fromLang: string, toLang: string, isDeyi: boolean = true) {
+  async searchUntranslateText(
+    fromLang: string,
+    toLang: string,
+    isDeyi: boolean = true
+  ) {
     try {
-      const sourceLangObj = isDeyi ? this.getOnlineLangObj() : this.getLocalLangObj();
+      const sourceLangObj = isDeyi
+        ? this.getOnlineLangObj()
+        : this.getLocalLangObj();
       const unTranslateLangObj = {};
       const fromLangObj = sourceLangObj[fromLang];
       if (isEmpty(fromLangObj)) {
-        throw new Error('数据异常');
+        throw new Error("数据异常");
       }
       const toLangObj = sourceLangObj[toLang] || {};
       const fromLangMap = {};
       const toLangMap = {};
       // console.log('fromLangObj', fromLangObj);
       // console.log('toLangObj', toLangObj);
-      Object.entries(fromLangObj).forEach((([fromK, fromV]) => {
+      Object.entries(fromLangObj).forEach(([fromK, fromV]) => {
         if (!toLangObj[fromK]) {
           fromLangMap[fromK] = fromV;
-          toLangMap[fromK] = '';
+          toLangMap[fromK] = "";
         }
-      }));
+      });
       unTranslateLangObj[fromLang] = fromLangMap;
       unTranslateLangObj[toLang] = toLangMap;
       return unTranslateLangObj;
@@ -642,17 +740,22 @@ export class Config {
 
   // 同步单个本地temp文件的文案到deyi平台
   async handleSyncTempFileToOnline(fsPath: string, cb: Function) {
-    const pathName = (this.tempPaths || '').replace(/\*/g, '');
-    if (pathName && fsPath && FileIO.isIncludePath(fsPath, pathName) && this.isOnline()) {
+    const pathName = (this.tempPaths || "").replace(/\*/g, "");
+    if (
+      pathName &&
+      fsPath &&
+      FileIO.isIncludePath(fsPath, pathName) &&
+      this.isOnline()
+    ) {
       const fileName = path.basename(fsPath);
       // 命名规范
-      let pageEnName = fileName.split('_')[0];
+      let pageEnName = fileName.split("_")[0];
       if (/\.(json)$/.test(fileName)) {
-        if (pageEnName.includes('.json')) {
-          pageEnName = pageEnName.replace('.json', '');
+        if (pageEnName.includes(".json")) {
+          pageEnName = pageEnName.replace(".json", "");
         }
         try {
-          const data = fs.readFileSync(fsPath, 'utf-8');
+          const data = fs.readFileSync(fsPath, "utf-8");
           if (data) {
             const i18nLangObj = eval(`(${data})`);
             this.handleSendToOnline(i18nLangObj, pageEnName, cb);
@@ -662,27 +765,31 @@ export class Config {
         }
       }
     } else {
-      return vscode.window.showWarningMessage(`请在文件目录${this.tempPaths}下执行该命令`);
+      return vscode.window.showWarningMessage(
+        `请在文件目录${this.tempPaths}下执行该命令`
+      );
     }
   }
 
   // 批量同步本地temp文件的文案到deyi平台
   async handleSyncAllTempFileToOnline(cb: Function) {
     if (this.tempPaths && this.isOnline()) {
-      const files = await FileIO.getFiles(this.tempPaths);// 读取临时文件
+      const files = await FileIO.getFiles(this.tempPaths); // 读取临时文件
       if (!files.length) {
-        return vscode.window.showWarningMessage(`文件目录${this.tempPaths}下缺少需要同步的文案`);
+        return vscode.window.showWarningMessage(
+          `文件目录${this.tempPaths}下缺少需要同步的文案`
+        );
       }
       files.forEach(({ fsPath }) => {
         const fileName = path.basename(fsPath);
         // 命名规范
-        let pageEnName = fileName.split('_')[0];
+        let pageEnName = fileName.split("_")[0];
         if (/\.(json)$/.test(fileName)) {
-          if (pageEnName.includes('.json')) {
-            pageEnName = pageEnName.replace('.json', '');
+          if (pageEnName.includes(".json")) {
+            pageEnName = pageEnName.replace(".json", "");
           }
           try {
-            const data = fs.readFileSync(fsPath, 'utf-8');
+            const data = fs.readFileSync(fsPath, "utf-8");
             if (data) {
               const i18nLangObj = eval(`(${data})`);
               this.handleSendToOnline(i18nLangObj, pageEnName, cb);
@@ -697,7 +804,8 @@ export class Config {
 
   // 同步文案到deyi平台
   async handleSendToOnline(i18nLangObj: any, pageEnName: string, cb: Function) {
-    if (!this.isOnline() || !this.checkProjectConfig()) {// 校验当前配置
+    if (!this.isOnline() || !this.checkProjectConfig()) {
+      // 校验当前配置
       return null;
     }
     try {
@@ -721,7 +829,7 @@ export class Config {
             };
             const liensItem = {
               lineCode: this.defaultLang,
-              content: v
+              content: v,
             };
             item.lines.push(liensItem);
             items.push(item);
@@ -732,7 +840,7 @@ export class Config {
               Object.entries(langObj).forEach(([k, v], i) => {
                 const liensItem = {
                   lineCode: lang,
-                  content: v
+                  content: v,
                 };
                 items[i].lines.push(liensItem);
               });
@@ -762,12 +870,12 @@ export class Config {
         if (itemList.length && this.onlineApiUrl) {
           // console.log("itemList", itemList);
           const taskList = itemList.reduce((pre, cur, i) => {
-            let url = this.onlineApiUrl + '/batch-add';
+            let url = this.onlineApiUrl + "/batch-add";
             const newParams = {
               ...params,
-              items: cur || []
+              items: cur || [],
             };
-            const task = this.request(url, newParams, 'post');
+            const task = this.request(url, newParams, "post");
             pre.push(task);
             return pre;
           }, []);
@@ -797,7 +905,7 @@ export class Config {
       items: [],
     };
     if (this.projectName && pageEnName && this.onlineApiUrl) {
-      const url = this.onlineApiUrl + '/query-by-page';
+      const url = this.onlineApiUrl + "/query-by-page";
       const res = await this.request(url, params);
       return res;
     }
@@ -815,7 +923,7 @@ export class Config {
       };
       // console.log('queryLangWords', this.projectName, this.onlineApiUrl);
       if (this.projectName && this.onlineApiUrl) {
-        const url = this.onlineApiUrl + '/query-by-package';
+        const url = this.onlineApiUrl + "/query-by-package";
         // console.log("url", url);
         const { data = null }: any = await this.request(url, params);
         console.log("data", data);
@@ -824,7 +932,7 @@ export class Config {
           if (isInit && Array.isArray(data.areaLangs)) {
             console.log("data.areaLangs", data.areaLangs);
             // 重新设置语言keys
-            this.tempLangs = data.areaLangs.map(item => item.code);
+            this.tempLangs = data.areaLangs.map((item) => item.code);
             if (isAll) {
               for (let item of data.areaLangs) {
                 if (Array.isArray(this.pullLangs) && this.pullLangs.length) {
@@ -832,7 +940,8 @@ export class Config {
                     await requestSingleLang(item.code);
                   }
                 } else {
-                  if (item.code) {// 递归循环调用
+                  if (item.code) {
+                    // 递归循环调用
                     await requestSingleLang(item.code);
                   }
                 }
@@ -855,30 +964,34 @@ export class Config {
     await requestSingleLang(lang, true);
   }
 
-  async getOnlineLanguage(lang: string = '', isAll = false) {
+  async getOnlineLanguage(lang: string = "", isAll = false) {
     const areaLang = lang || this.defaultLang;
     await this.queryLangWords(areaLang, isAll);
   }
 
-  request(url, params, method = 'get') {
+  request(url, params, method = "get") {
     // return new Promise((resolve, reject) => {
     //   resolve(null);
     // });
     return new Promise((resolve, reject) => {
-      if (method === 'get') {
-        API.GET(url, params).then((res) => {
-          resolve(res);
-        }).catch(e => {
-          console.log('e', e);
-          reject(e);
-        });
+      if (method === "get") {
+        API.GET(url, params)
+          .then((res) => {
+            resolve(res);
+          })
+          .catch((e) => {
+            console.log("e", e);
+            reject(e);
+          });
       } else {
-        API.POST(url, params).then((res) => {
-          resolve(res);
-        }).catch(e => {
-          console.log('e', e);
-          reject(e);
-        });
+        API.POST(url, params)
+          .then((res) => {
+            resolve(res);
+          })
+          .catch((e) => {
+            console.log("e", e);
+            reject(e);
+          });
       }
     });
   }
