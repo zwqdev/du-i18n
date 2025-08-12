@@ -17,7 +17,7 @@ const varReg = /\$\{(.[^\}]+)?\}/g; // 判断包含${}的正则
 let decorationType = null;
 const globalPkgPath = "**/package.json";
 const boundaryCodes = ['"', "'", "`"]; // 字符串边界
-const SPLIT = "|&|";
+const SPLIT = "\n";
 
 export class Utils {
   /**
@@ -1479,19 +1479,29 @@ export class Utils {
     });
 
     const getTransText = (obj: any = {}, max: number = 6000) => {
-      const text = Object.keys(obj)
-        .map((v: string, i: number) => {
-          if (i < max) {
-            return (v || "").toString().replace(/\n/g, nt);
-          }
-          return null;
-        })
-        .filter((v) => v !== null)
+      // 统一处理所有换行符为 <br>
+      const normalizeNewline = (str: string) => {
+        // 直接将所有 \r\n、\r、\n 都替换为 <br>
+        return str.replace(/\r\n|\r|\n/g, nt);
+      };
+
+      const keys = Object.keys(obj);
+      const limitedKeys = keys.slice(0, max);
+      const text = limitedKeys
+        .map((v: string) => normalizeNewline(v || ""))
         .join(SPLIT);
+
       const bitLen = Utils.getBitCount(text);
-      if (bitLen > max) {
-        const len = Object.keys(obj).length;
-        return getTransText(obj, len / 2);
+      if (bitLen > max && limitedKeys.length > 1) {
+        // 递归减半，直到长度合适或只剩一个key
+        return getTransText(
+          Object.fromEntries(
+            limitedKeys
+              .slice(0, Math.floor(limitedKeys.length / 2))
+              .map((k) => [k, obj[k]])
+          ),
+          max
+        );
       } else {
         return text;
       }
