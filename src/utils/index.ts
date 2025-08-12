@@ -1377,13 +1377,41 @@ export class Utils {
           const variants = createVariants(char);
           variants.forEach((variant) => {
             let completionKeyStr = Utils.getRegExpStr(variant);
-            // 只匹配JSX标签之间的文本，避免匹配注释
-            // 使用负向前瞻和负向后顾来排除注释
-            const reg = new RegExp(
-              `(?<!//[^\\r\\n]*)(>${completionKeyStr}<)(?![^\\r\\n]*\\/\\/)`,
+
+            // 处理 JSX 文本节点的多种情况：
+            // 1. 标准的 >text</tag> 格式
+            // 2. 带换行和缩进的格式
+            // 3. 自闭合标签内的文本
+
+            // 匹配标签内的纯文本（可能包含空白字符）
+            // 确保不匹配已经被{}包围的内容
+            const jsxTextRegex = new RegExp(
+              `(>[^{<]*?)\\b(${completionKeyStr})\\b([^}<]*?</?)`,
               "g"
             );
-            text = text.replace(reg, `>{${i18nT}}<`);
+
+            // 先检查是否已经被替换过
+            const beforeReplace = text;
+            text = text.replace(
+              jsxTextRegex,
+              (match, before, targetText, after) => {
+                // 如果前面已经有{或者后面已经有}，说明已经被处理过了
+                if (before.includes("{") || after.includes("}")) {
+                  return match;
+                }
+                return `${before}{${i18nT}}${after}`;
+              }
+            );
+
+            // 如果上面的正则没有匹配到，尝试更简单的模式
+            if (text === beforeReplace) {
+              // 匹配简单的 >文本< 格式
+              const simpleRegex = new RegExp(
+                `(>\\s*)(${completionKeyStr})(\\s*<)`,
+                "g"
+              );
+              text = text.replace(simpleRegex, `$1{${i18nT}}$3`);
+            }
           });
         });
 
