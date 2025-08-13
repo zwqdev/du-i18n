@@ -2,12 +2,14 @@ import * as vscode from "vscode";
 import MapCache from "./cache";
 import { Baidu } from "./baidu";
 import { FileIO } from "./fileIO";
+import { Message } from "./message";
 const path = require("path");
 const fs = require("fs");
 const YAML = require("yaml");
 const merge = require("lodash/merge");
 const isEmpty = require("lodash/isEmpty");
 const isObject = require("lodash/isObject");
+const chunk = require("lodash/chunk");
 
 // 频繁调用，缓存计算结果
 const RegCache = new MapCache();
@@ -1478,104 +1480,92 @@ export class Utils {
       }
     });
 
-    const getTransText = (obj: any = {}, max: number = 6000) => {
+    const getTransText = (obj: any = {}, max: number = 1) => {
       // 统一处理所有换行符为 <br>
-      const normalizeNewline = (str: string) => {
-        // 直接将所有 \r\n、\r、\n 都替换为 <br>
-        return str.replace(/\r\n|\r|\n/g, nt);
-      };
+      // const normalizeNewline = (str: string) => {
+      //   return str.replace(/\r\n|\r|\n/g, nt);
+      // };
 
-      const keys = Object.keys(obj);
-      const limitedKeys = keys.slice(0, max);
-      const text = limitedKeys
-        .map((v: string) => normalizeNewline(v || ""))
-        .join(SPLIT);
-
-      const bitLen = Utils.getBitCount(text);
-      if (bitLen > max && limitedKeys.length > 1) {
-        // 递归减半，直到长度合适或只剩一个key
-        return getTransText(
-          Object.fromEntries(
-            limitedKeys
-              .slice(0, Math.floor(limitedKeys.length / 2))
-              .map((k) => [k, obj[k]])
-          ),
-          max
-        );
-      } else {
-        return text;
-      }
+      return Object.keys(obj);
     };
 
-    const task = async (lang = "en") => {
-      return new Promise(async (resolve, reject) => {
-        try {
-          const q = getTransText(transSourceObj[lang]);
-          if (!q) {
-            // showMessage(`${defaultLang}的源文案不能为空！`, MessageType.WARNING);
-            result.message = `${defaultLang}的源文案不能为空！`;
-            throw new Error(`${defaultLang}的源文案不能为空！`);
-          }
-          const langMap = {
-            zh: "中文",
-            en: "英文",
-            ko: "韩文",
-            ru: "俄文",
-            vi: "越文",
-          };
-          const resMap = {
-            中文: "zh",
-            英文: "en",
-            韩文: "ko",
-            俄文: "ru",
-            越文: "vi",
-          };
-          const params = {
-            inputLanguage: langMap["zh"],
-            query: q,
-            cookie,
-          };
-          const { data } = await Baidu.getTranslate(params);
-          if (data && data.code === "000000") {
-            if (data.data) {
-              Object.keys(data.data).forEach((key) => {
-                const lang = resMap[key];
-                const source = q.split(SPLIT);
-                const trans = data.data[key].split(SPLIT);
-                if (!transSourceObj[lang]) {
-                  transSourceObj[lang] = {};
-                }
-                source.forEach((line, index) => {
-                  if (line) {
-                    transSourceObj[lang][line] = trans[index] || "";
-                  }
-                });
-              });
+    const langMap = {
+      zh: "中文",
+      en: "英文",
+      ko: "韩文",
+      ru: "俄文",
+      vi: "越文",
+    };
+    const resMap = {
+      中文: "zh",
+      英文: "en",
+      韩文: "ko",
+      俄文: "ru",
+      越文: "vi",
+    };
+    const qArr = getTransText(transSourceObj["en"]); // 默认分组
+    if (!qArr || !qArr.length) {
+      result.message = `${defaultLang}的源文案不能为空！`;
+      return result;
+    }
+
+    // 每个分组生成一个task
+    const taskList: (() => Promise<{ q: string; data: any }>)[] = qArr.map(
+      (q) => async () => {
+        return new Promise<{ q: string; data: any }>(
+          async (resolve, reject) => {
+            try {
+              const params = {
+                inputLanguage: langMap["zh"],
+                query: q,
+                cookie,
+              };
+              const { data } = await Baidu.getTranslate(params);
+              resolve({ q, data });
+            } catch (e) {
+              reject(e);
             }
-            resolve(transSourceObj);
-          } else {
-            result.message = data.msg;
-            throw new Error(data.code);
           }
-          // console.log('transSourceObj', transSourceObj);
-        } catch (e) {
-          // // 记录用户行为数据
-          // reporter?.sendTelemetryEvent("extension_du_i18n_multiScanAndGenerate", {
-          //   action: "在线翻译-外部-异常",
-          //   error: e,
-          // });
-          reject(e);
+        );
+      }
+    );
+    let statusBarItem: vscode.StatusBarItem | undefined;
+    try {
+      statusBarItem = vscode.window.createStatusBarItem(
+        vscode.StatusBarAlignment.Left
+      );
+      statusBarItem.text = "$(sync~spin) 正在批量翻译...";
+      statusBarItem.show();
+      const results = await Utils.limitedParallelRequests<{
+        q: string;
+        data: any;
+      }>(taskList, 5);
+      // 统一处理所有结果，保证q与翻译内容一一对应
+      results.forEach(({ q, data }) => {
+        if (data && data.code === "000000" && data.data) {
+          const source = q;
+          Object.keys(data.data).forEach((key) => {
+            const lang = resMap[key];
+            const trans = data.data[key];
+            if (!transSourceObj[lang]) {
+              transSourceObj[lang] = {};
+            }
+            transSourceObj[lang][source] = trans;
+          });
+        } else if (data && data.msg) {
+          result.message = data.msg;
+          Message.showMessage(result.message);
         }
       });
-    };
-    const taskList = [() => task()];
-    try {
-      // 目前同一个文件多种翻译语言，只要有一个翻译出错，就返回null报错
-      await Utils.limitedParallelRequests(taskList, 1);
       result.transSourceObj = transSourceObj;
       return result;
     } catch (e) {
       return result;
+    } finally {
+      if (statusBarItem) {
+        statusBarItem.hide();
+        statusBarItem.dispose();
+      }
     }
   }
 
@@ -1607,8 +1597,6 @@ export class Utils {
                     const source = transSourceObj[lang] || {};
                     Object.keys(obj).forEach((k) => {
                       const chieseStr = zhSource[k];
-                      // console.log('obj', k, obj[k]);
-                      // console.log('source', chieseStr, source[chieseStr]);
                       if (isOverWriteLocal) {
                         // 本地有值的会覆盖
                         obj[k] = source[chieseStr] || "";
@@ -1673,29 +1661,18 @@ export class Utils {
     requests: (() => Promise<T>)[], // 请求函数数组
     maxConcurrency: number // 最大并发请求数
   ): Promise<T[]> {
-    const results: T[] = [];
-    const executing: Promise<number>[] = []; // 当前执行中的请求
-
-    for (const request of requests) {
-      const task = request().then((result) => results.push(result)); // 执行请求并保存结果
-
-      executing.push(task);
-
-      // 限制并发请求数
-      if (executing.length >= maxConcurrency) {
-        // 等待最早的请求完成
-        await Promise.race(executing);
-        // 移除已经完成的请求
-        executing.splice(
-          executing.findIndex((p) => p === task),
-          1
-        );
-      }
+    const results: T[] = new Array(requests.length);
+    let idx = 0;
+    async function runNext() {
+      if (idx >= requests.length) return;
+      const current = idx++;
+      results[current] = await requests[current]();
+      await runNext();
     }
-
-    // 等待所有请求完成
-    await Promise.all(executing);
-
+    const runners = Array(Math.min(maxConcurrency, requests.length))
+      .fill(0)
+      .map(runNext);
+    await Promise.all(runners);
     return results;
   }
 }
