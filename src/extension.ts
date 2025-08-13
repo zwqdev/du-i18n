@@ -977,21 +977,13 @@ export async function activate(context: vscode.ExtensionContext) {
         async function () {
           const activeEditor = vscode.window.activeTextEditor;
           if (activeEditor) {
-            const { fileName } = activeEditor.document || {};
-            // 更新本地语言
-            await config.readLocalGlobalLangObj();
-            // 合并语言包
-            const localLangObj = config.getLocalLangObj();
             const tempPaths = config.getTempPaths();
-            const langFileName = "lang.json";
-            if (!tempPaths) {
-              return;
-            }
+            const tempLangs = config.getTempLangs();
+            const langPaths = config.getLangPaths();
             FileIO.generateMergeLangFile(
+              langPaths,
               tempPaths,
-              fileName,
-              langFileName,
-              localLangObj,
+              tempLangs,
               () => {
                 Message.showMessage(`合并成功`, MessageType.INFO);
               }
