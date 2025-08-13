@@ -1445,8 +1445,6 @@ export class Utils {
     return count;
   }
 
-  // 调用百度翻译-同步翻译文件
-  // https://fanyi-api.baidu.com/doc/21
   static async getTransSourceObjByLlm(
     localLangObj: Object,
     defaultLang: string,
@@ -1521,6 +1519,9 @@ export class Utils {
                 cookie,
               };
               const { data } = await Baidu.getTranslate(params);
+              if (data.code !== "000000") {
+                Message.showMessage(data.msg || "翻译失败");
+              }
               resolve({ q, data });
             } catch (e) {
               reject(e);
@@ -1540,7 +1541,7 @@ export class Utils {
         q: string;
         data: any;
       }>(taskList, 5);
-      // 统一处理所有结果，保证q与翻译内容一一对应
+
       results.forEach(({ q, data }) => {
         if (data && data.code === "000000" && data.data) {
           const source = q;

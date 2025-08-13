@@ -146,20 +146,10 @@ export async function activate(context: vscode.ExtensionContext) {
                             pageEnName,
                             async () => {
                               handleRefresh();
-
-                              // // 记录用户行为数据
-                              // reporter.sendTelemetryEvent("extension_du_i18n_scanAndGenerate", {
-                              // 	action: "扫描中文-内部-成功",
-                              // });
                             }
                           );
                         } else {
                           handleRefresh();
-
-                          // // 记录用户行为数据
-                          // reporter.sendTelemetryEvent("extension_du_i18n_scanAndGenerate", {
-                          // 	action: "扫描中文-外部-成功",
-                          // });
                         }
                       }
                     );
@@ -169,12 +159,6 @@ export async function activate(context: vscode.ExtensionContext) {
             }
           } catch (e) {
             console.error("scanAndGenerate e", e);
-            // // 记录用户行为数据
-            // reporter.sendTelemetryEvent("extension_du_i18n_scanAndGenerate", {
-            // 	action: "扫描中文-异常",
-            // 	projectInfo,
-            // 	error: e
-            // });
           }
         }
       )
@@ -250,7 +234,6 @@ export async function activate(context: vscode.ExtensionContext) {
                               );
                             } else {
                               if (i === files.length - 1) {
-                                // TODO: 这里其实用promise.all更好，但改造多层回调成本太大，暂且这样
                                 handleRefresh();
                               }
                             }
@@ -290,7 +273,6 @@ export async function activate(context: vscode.ExtensionContext) {
               sourObj: any = {},
               filePath: string = ""
             ) => {
-              // console.log("transSourceObj", transSourceObj);
               await Utils.translateLocalFile(
                 sourObj,
                 langKey,
@@ -343,8 +325,6 @@ export async function activate(context: vscode.ExtensionContext) {
                   FileIO.isIncludePath(fileName, tempPathName) &&
                   /\.(json)$/.test(fileName)
                 ) {
-                  const baiduAppid = config.getBaiduAppid();
-                  const baiduSecrectKey = config.getBaiduSecrectKey();
                   if (!/\.(json)$/.test(fileName)) {
                     return;
                   }
@@ -401,7 +381,6 @@ export async function activate(context: vscode.ExtensionContext) {
               sourObj: any = {},
               filePath: string = ""
             ) => {
-              // console.log("transSourceObj", transSourceObj);
               await Utils.translateLocalFile(
                 sourObj,
                 langKey,
