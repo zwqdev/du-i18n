@@ -499,8 +499,7 @@ export class FileIO {
 
       // 检查临时目录是否存在
       if (!fs.existsSync(tempPath)) {
-        console.warn(`临时目录不存在: ${tempPath}`);
-        cb(targetPath);
+        cb && cb(targetPath);
         return;
       }
 
@@ -511,15 +510,38 @@ export class FileIO {
       );
 
       // 将合并的内容写入目标语言文件
-      await FileIO.writeLanguageFiles(
+      const processedFiles = await FileIO.writeLanguageFiles(
         targetPath,
         mergedTranslations,
         tempLangs
       );
 
-      cb(targetPath);
+      // 合并成功后询问是否删除临时文件
+      const shouldDeleteTemp = await vscode.window.showInformationMessage(
+        `翻译文件合并成功！共更新了 ${processedFiles.length} 个语言文件。是否删除临时目录中的文件？`,
+        { modal: false },
+        "删除临时文件",
+        "保留文件"
+      );
+
+      if (shouldDeleteTemp === "删除临时文件") {
+        try {
+          const tempFiles = (await FileIO.getFolderFiles(
+            tempPath,
+            false
+          )) as string[];
+          const deletedCount = await FileIO.deleteTempFiles(tempFiles);
+          vscode.window.showInformationMessage(
+            `已删除 ${deletedCount} 个临时文件`
+          );
+        } catch (error) {
+          vscode.window.showErrorMessage("删除临时文件失败，请手动删除");
+        }
+      }
+
+      cb && cb(targetPath);
     } catch (error) {
-      console.error("generateMergeLangFile error:", error);
+      // Error handling without logging
     }
   }
 
@@ -570,12 +592,12 @@ export class FileIO {
               }
             });
           } catch (parseError) {
-            console.error(`解析JSON文件失败: ${filePath}`, parseError);
+            // Ignore parse errors
           }
         }
       }
     } catch (error) {
-      console.error(`读取临时目录失败: ${tempPath}`, error);
+      // Ignore read errors
     }
 
     return mergedTranslations;
@@ -588,7 +610,9 @@ export class FileIO {
     targetPath: string,
     newTranslations: { [lang: string]: any },
     tempLangs: string[]
-  ): Promise<void> {
+  ): Promise<string[]> {
+    const processedFiles: string[] = [];
+
     for (const lang of tempLangs) {
       const newContent = newTranslations[lang];
 
@@ -609,15 +633,13 @@ export class FileIO {
         const formattedContent = JSON.stringify(finalContent, null, "\t");
         FileIO.writeFileToLine(langFilePath, formattedContent);
 
-        console.log(
-          `语言文件更新完成: ${langFilePath} (${
-            Object.keys(finalContent).length
-          } 个翻译项)`
-        );
+        processedFiles.push(langFilePath);
       } catch (error) {
-        console.error(`写入语言文件失败: ${langFilePath}`, error);
+        // Ignore write errors
       }
     }
+
+    return processedFiles;
   }
 
   /**
@@ -632,9 +654,28 @@ export class FileIO {
       const fileContent = fs.readFileSync(filePath, "utf-8");
       return JSON.parse(fileContent);
     } catch (error) {
-      console.warn(`读取现有语言文件失败: ${filePath}`, error);
       return {};
     }
+  }
+
+  /**
+   * 删除临时文件
+   */
+  private static async deleteTempFiles(filePaths: string[]): Promise<number> {
+    let deletedCount = 0;
+
+    for (const filePath of filePaths) {
+      try {
+        if (path.extname(filePath) === ".json" && fs.existsSync(filePath)) {
+          fs.unlinkSync(filePath);
+          deletedCount++;
+        }
+      } catch (error) {
+        // Ignore delete errors
+      }
+    }
+
+    return deletedCount;
   }
 
   /**
