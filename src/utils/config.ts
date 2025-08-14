@@ -64,7 +64,7 @@ export class Config {
     this.defaultLang = "zh"; // 默认语言
     this.pullLangs = []; // 指定翻译扩展的语言，优先级比tempLangs高，远程不允许覆盖
     this.tempLangs = ["zh", "en", "ko", "ru"]; // 翻译扩展语言，远程的会覆盖
-    this.quoteKeys = ["this.$t", "$t", "i18n.global.t"]; // 引用key
+    this.quoteKeys = ["$t", "i18n.global.t"]; // 引用key
     this.keyBoundaryChars = []; // 引用key的边界字符
     this.bigFileLineCount = 1000; // 大文件行数
     this.isOverWriteLocal = false; // 是否覆盖本地已填写的翻译
@@ -77,8 +77,8 @@ export class Config {
     this.isHookImport = false; // 是否需要hook引入i18n
 
     this.isOnlineTrans = true; // 本地-是否支持在线翻译
-    this.baiduAppid = ""; // 百度翻译appid
-    this.baiduSecrectKey = ""; // 百度翻译密钥
+    this.baiduAppid = "xxx"; // 百度翻译appid
+    this.baiduSecrectKey = "xxx"; // 百度翻译密钥
 
     this.fileReg = /\.(ts|js|tsx|jsx|vue|html|mpx)$/; // 识别的文件
     this.jsonReg = /\.(json)$/; // json文件
