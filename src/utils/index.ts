@@ -13,6 +13,8 @@ const chunk = require("lodash/chunk");
 
 // 频繁调用，缓存计算结果
 const RegCache = new MapCache();
+// 翻译缓存：key => sourceText, value => data.data (Baidu返回的lang->trans映射)
+const TransCache = new MapCache();
 const chineseCharReg = /[\u4e00-\u9fa5]/;
 const chineseChar2Reg = /[\u4e00-\u9fa5]+|[\u4e00-\u9fa5]/g;
 const varReg = /\$\{(.[^\}]+)?\}/g; // 判断包含${}的正则
@@ -1491,9 +1493,30 @@ export class Utils {
       return result;
     }
 
-    // 每个分组生成一个task
-    const taskList: (() => Promise<{ q: string; data: any }>)[] = qArr.map(
-      (q) => async () => {
+    // 缓存优先：检查哪些 q 已有缓存，只有未缓存的才生成请求任务
+    const uncachedQs: string[] = [];
+    // 直接使用源文本作为缓存 key（无需包含 cookie）
+    const qCacheKey = (q: string) => q;
+    qArr.forEach((q) => {
+      const cacheData = TransCache.get(qCacheKey(q));
+      if (cacheData && cacheData.data) {
+        // 将缓存结果直接写入 transSourceObj
+        Object.keys(cacheData.data).forEach((key) => {
+          const lang = resMap[key];
+          const trans = cacheData.data[key];
+          if (!transSourceObj[lang]) {
+            transSourceObj[lang] = {};
+          }
+          transSourceObj[lang][q] = trans;
+        });
+      } else {
+        uncachedQs.push(q);
+      }
+    });
+
+    // 每个未缓存分组生成一个task
+    const taskList: (() => Promise<{ q: string; data: any }>)[] =
+      uncachedQs.map((q) => async () => {
         return new Promise<{ q: string; data: any }>(
           async (resolve, reject) => {
             const params = {
@@ -1502,14 +1525,20 @@ export class Utils {
               cookie,
             };
             const { data } = await Baidu.getTranslate(params);
-            if (!data.data) {
-              reject(new Error(data.msg || "翻译失败"));
+            if (!data || !data.data) {
+              reject(new Error((data && data.msg) || "翻译失败"));
+              return;
+            }
+            // 写入缓存
+            try {
+              TransCache.set(qCacheKey(q), { q, data });
+            } catch (e) {
+              // ignore cache set errors
             }
             resolve({ q, data });
           }
         );
-      }
-    );
+      });
     let statusBarItem: vscode.StatusBarItem | undefined;
     try {
       statusBarItem = vscode.window.createStatusBarItem(
@@ -1522,6 +1551,7 @@ export class Utils {
         data: any;
       }>(taskList, 10);
 
+      // 合并本次请求结果
       results.forEach(({ q, data }) => {
         const source = q;
         Object.keys(data.data).forEach((key) => {
@@ -1533,6 +1563,8 @@ export class Utils {
           transSourceObj[lang][source] = trans;
         });
       });
+
+      // 另外，将之前可能存在的缓存项（已在前面写入）和本次结果一起返回
       result.transSourceObj = transSourceObj;
       return result;
     } catch (e) {
