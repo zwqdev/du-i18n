@@ -1512,20 +1512,16 @@ export class Utils {
       (q) => async () => {
         return new Promise<{ q: string; data: any }>(
           async (resolve, reject) => {
-            try {
-              const params = {
-                inputLanguage: langMap["zh"],
-                query: q,
-                cookie,
-              };
-              const { data } = await Baidu.getTranslate(params);
-              if (data.code !== "000000") {
-                Message.showMessage(data.msg || "翻译失败");
-              }
-              resolve({ q, data });
-            } catch (e) {
-              reject(e);
+            const params = {
+              inputLanguage: langMap["zh"],
+              query: q,
+              cookie,
+            };
+            const { data } = await Baidu.getTranslate(params);
+            if (!data.data) {
+              reject(data.msg || "翻译失败");
             }
+            resolve({ q, data });
           }
         );
       }
@@ -1540,27 +1536,23 @@ export class Utils {
       const results = await Utils.limitedParallelRequests<{
         q: string;
         data: any;
-      }>(taskList, 5);
+      }>(taskList, 10);
 
       results.forEach(({ q, data }) => {
-        if (data && data.code === "000000" && data.data) {
-          const source = q;
-          Object.keys(data.data).forEach((key) => {
-            const lang = resMap[key];
-            const trans = data.data[key];
-            if (!transSourceObj[lang]) {
-              transSourceObj[lang] = {};
-            }
-            transSourceObj[lang][source] = trans;
-          });
-        } else if (data && data.msg) {
-          result.message = data.msg;
-          Message.showMessage(result.message);
-        }
+        const source = q;
+        Object.keys(data.data).forEach((key) => {
+          const lang = resMap[key];
+          const trans = data.data[key];
+          if (!transSourceObj[lang]) {
+            transSourceObj[lang] = {};
+          }
+          transSourceObj[lang][source] = trans;
+        });
       });
       result.transSourceObj = transSourceObj;
       return result;
     } catch (e) {
+      Message.showMessage(e.message || "翻译失败");
       return result;
     } finally {
       if (statusBarItem) {
