@@ -1101,7 +1101,7 @@ export class Utils {
         let text = data.substring(templateStartIndex, templateEndIndex);
         // ...existing code...
         // const replaceKey = quoteKeys.includes('$t') ? '$t' : quoteKeys[0];
-        const replaceKey = quoteKeys.length > 2 ? quoteKeys[1] : quoteKeys[0];
+        const replaceKey = quoteKeys[0];
         (keys || []).forEach((char, i) => {
           const key = `${keyPrefix}${i}`;
           const i18nT = getI18nT(replaceKey, key, char);
@@ -1158,9 +1158,7 @@ export class Utils {
         // console.log("script", text);
         (keys || []).filter(Boolean).forEach((char, i) => {
           const key = `${keyPrefix}${i}`;
-          const replaceKey = quoteKeys.includes("this.$t")
-            ? "this.$t"
-            : quoteKeys[0];
+          const replaceKey = quoteKeys[1];
           const i18nT = getI18nT(replaceKey, key, char);
           let completionKeyStr = Utils.getRegExpStr(char);
           const reg = new RegExp(`[\`'"](${completionKeyStr})[\`'"]`, "g");
@@ -1240,9 +1238,7 @@ export class Utils {
       const replaceI18nStr = (keys: any[]) => {
         let text = data;
         // console.log("script", text);
-        const replaceKey = quoteKeys.includes("i18n.t")
-          ? "i18n.t"
-          : quoteKeys[quoteKeys.length - 1];
+        const replaceKey = quoteKeys[1];
         (keys || []).filter(Boolean).forEach((char, i) => {
           const key = `${keyPrefix}${i}`;
           const i18nT = getI18nT(replaceKey, key, char);
@@ -1257,21 +1253,9 @@ export class Utils {
       const handleReplace = () => {
         // 初始化中文和日语
         const i18nStr = replaceI18nStr(chars);
-        const singleImport = `import i18n from '@/i18n'`;
-        const doubleImport = `import i18n from "@/i18n"`;
-        const i18nImportStr = isSingleQuote ? singleImport : doubleImport;
-        const importStr =
-          quoteKeys.includes("i18n.t") &&
-          i18nStr.indexOf(singleImport) === -1 &&
-          i18nStr.indexOf(doubleImport) === -1
-            ? `${i18nImportStr}\n`
-            : "";
-        newData = importStr + i18nStr;
+        newData = i18nStr;
       };
 
-      // // 写入全局变量文件
-      // handleInsertI18nFile();
-      // 将原文件替换i18n.$t('key')形式
       handleReplace();
     }
     return newData;
@@ -1519,7 +1503,7 @@ export class Utils {
             };
             const { data } = await Baidu.getTranslate(params);
             if (!data.data) {
-              reject(data.msg || "翻译失败");
+              reject(new Error(data.msg || "翻译失败"));
             }
             resolve({ q, data });
           }

@@ -50,9 +50,9 @@ export class Config {
     this.projectShortName = ""; // deyi项目简称
     this.onlineApiUrl = ""; // 地址url
     this.version = ""; // deyi版本
-    this.langPaths = "**/src/i18n/locale/**"; // 语言文件路径
-    this.transSourcePaths = "**/src/i18n/source/**"; // 翻译源文件路径
-    this.tempPaths = "**/src/i18n/temp/**"; // 新增翻译文案路径
+    this.langPaths = "**/src/locales/**"; // 语言文件路径
+    this.transSourcePaths = "**/src/locales/source/**"; // 翻译源文件路径
+    this.tempPaths = "**/src/locales/temp/**"; // 新增翻译文案路径
     this.tempFileName = ""; // 指定生成json文件名
     this.localLangFilePath = "/.language.md"; // 拉取远程语言保存本地文件路径
     this.missCheckResultPath = "/.languageMissLocal.md"; // 翻译漏检本地文件路径
@@ -63,9 +63,9 @@ export class Config {
     this.multiFolders = ["src", "pages"]; // 复杂文件夹
     this.defaultLang = "zh"; // 默认语言
     this.pullLangs = []; // 指定翻译扩展的语言，优先级比tempLangs高，远程不允许覆盖
-    this.tempLangs = ["zh", "en"]; // 翻译扩展语言，远程的会覆盖
-    this.quoteKeys = ["this.$t", "$t", "i18n.t"]; // 引用key
-    this.keyBoundaryChars = ["\n", ">", "<", "}", "{", "(", ")"]; // 引用key的边界字符
+    this.tempLangs = ["zh", "en", "ko", "ru"]; // 翻译扩展语言，远程的会覆盖
+    this.quoteKeys = ["this.$t", "$t", "i18n.global.t"]; // 引用key
+    this.keyBoundaryChars = []; // 引用key的边界字符
     this.bigFileLineCount = 1000; // 大文件行数
     this.isOverWriteLocal = false; // 是否覆盖本地已填写的翻译
     this.uncheckMissKeys = []; // 跳过翻译漏检机制的key，打标已翻译
