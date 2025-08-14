@@ -76,7 +76,7 @@ export class VSCodeUI {
               text.substring(leftCol, rightCol)
             );
             // key: 左括号位置+右括号位置，value: i18n的字符串
-            positionObj[`${leftCol}-${rightCol + 1}`] = value;
+            positionObj[`${leftCol}-${rightCol + 1}`] = value || "";
             startIndex = leftCol;
           } else {
             break;
@@ -124,7 +124,7 @@ export class VSCodeUI {
           const startPosition = editor.document.positionAt(p[0]);
           const endPosition = editor.document.positionAt(p[1]);
           const range = new vscode.Range(startPosition, endPosition);
-          const value = Utils.getObjectValue(lang, v);
+          const value = Utils.getObjectValue(lang, v) || "";
           const text = Utils.getStringText(value);
           const item = {
             range,
