@@ -401,7 +401,7 @@ export class Utils {
     isSingleQuote: boolean,
     keyBoundaryChars: string[],
     vueReg: RegExp,
-    isHookImport: boolean,
+    hookImport: string,
     cb: Function
   ) {
     try {
@@ -422,7 +422,7 @@ export class Utils {
               quoteKeys,
               prefixKey,
               isSingleQuote,
-              isHookImport
+              hookImport
             );
             FileIO.handleWriteStream(filePath, newContent, () => {});
             // 处理含有变量的key
@@ -452,7 +452,8 @@ export class Utils {
               chars,
               quoteKeys,
               prefixKey,
-              isSingleQuote
+              isSingleQuote,
+              hookImport
             );
             FileIO.handleWriteStream(filePath, newContent, () => {});
             // 处理含有变量的key
@@ -483,7 +484,7 @@ export class Utils {
               quoteKeys,
               prefixKey,
               isSingleQuote,
-              isHookImport
+              hookImport
             );
             FileIO.handleWriteStream(filePath, newContent, () => {});
             // 处理含有变量的key
@@ -1029,27 +1030,54 @@ export class Utils {
     return acc;
   }
 
-  static insertImports(content: string, isSingleQuote: boolean) {
-    // 匹配所有 import 语句
-    const importRegex = /(import\s+.*?from\s+['"].*?['"];?\n)/g;
+  static insertImports(content: string, hookImport: string) {
+    // 支持多行 import 的正则（全局、多行）
+    const importRegex: RegExp = /^import[\s\S]*?from\s+['"][^'\"]+['"];?\s*/gm;
     const imports = content.match(importRegex) || [];
 
-    const len = imports.length;
-    // 添加 i18n 导入
-    if (!imports.some((imp) => imp.includes("@/i18n"))) {
-      const newImport = isSingleQuote
-        ? `import i18n from '@/i18n';\n`
-        : `import i18n from "@/i18n";\n`;
-      const lastImportIndex =
-        content.lastIndexOf(imports[len - 1]) + imports[len - 1].length;
-      const newContent =
-        content.slice(0, lastImportIndex) +
-        newImport +
-        content.slice(lastImportIndex);
-      return newContent;
+    // 提取 hookImport 中的模块名用于精确去重（from 'module'）
+    const hookModuleMatch = hookImport.match(/from\s+['"]([^'"]+)['"]/);
+    const hookModule = hookModuleMatch ? hookModuleMatch[1] : null;
+
+    // 如果 hookImport 的模块已经被导入，则直接返回原内容
+    if (hookModule) {
+      for (const imp of imports) {
+        const m = imp.match(/from\s+['"]([^'"]+)['"]/);
+        if (m && m[1] === hookModule) return content;
+      }
+    } else {
+      // 兜底：若 hookImport 文本已存在则跳过
+      if (content.includes(hookImport)) return content;
     }
 
-    return content;
+    // 准备插入内容：去掉开头多余换行并保证以单个换行结尾，避免粘连或多余空行
+    let importText = hookImport.replace(/^\n+/, "");
+    importText = importText.endsWith("\n") ? importText : importText + "\n";
+
+    // 没有任何 import 的文件：考虑 shebang（#!）情况
+    if (imports.length === 0) {
+      if (content.startsWith("#!")) {
+        const firstNewline = content.indexOf("\n");
+        if (firstNewline !== -1) {
+          return (
+            content.slice(0, firstNewline + 1) +
+            importText +
+            content.slice(firstNewline + 1)
+          );
+        }
+      }
+      return importText + content;
+    }
+
+    // 将 import 插入到最后一个 import 之后，并规范前后换行，避免产生多余空行
+    const last = imports[imports.length - 1];
+    const lastIndexRaw = content.lastIndexOf(last) + last.length;
+    const prefix = content.slice(0, lastIndexRaw);
+    let suffix = content.slice(lastIndexRaw);
+    // 保证 prefix 以单个换行结束，去掉 suffix 开头的多余换行
+    const prefixNorm = prefix.replace(/\n+$/, "\n");
+    const suffixNorm = suffix.replace(/^\n+/, "");
+    return prefixNorm + importText + suffixNorm;
   }
   /**
    * 获取新的文件字符串，针对vue
@@ -1065,7 +1093,7 @@ export class Utils {
     quoteKeys: string[],
     keyPrefix: string,
     isSingleQuote: boolean,
-    isHookImport: boolean
+    hookImport: string
   ) {
     // 将key写入i18n
     let newData = data;
@@ -1201,8 +1229,8 @@ export class Utils {
       handleTemplate();
       handleScript();
 
-      if (isHookImport) {
-        newData = Utils.insertImports(newData, isSingleQuote);
+      if (hookImport) {
+        newData = Utils.insertImports(newData, hookImport);
       }
     }
     return newData;
@@ -1220,7 +1248,8 @@ export class Utils {
     chars: any[],
     quoteKeys: string[],
     keyPrefix: string,
-    isSingleQuote: boolean
+    isSingleQuote: boolean,
+    hookImport: string
   ) {
     // 将key写入i18n
     let newData = data;
@@ -1256,6 +1285,10 @@ export class Utils {
         // 初始化中文和日语
         const i18nStr = replaceI18nStr(chars);
         newData = i18nStr;
+
+        if (hookImport) {
+          newData = Utils.insertImports(newData, hookImport);
+        }
       };
 
       handleReplace();
@@ -1276,7 +1309,7 @@ export class Utils {
     quoteKeys: string[],
     keyPrefix: string,
     isSingleQuote: boolean,
-    isHookImport: boolean
+    hookImport: string
   ) {
     if (!data || !chars.length) {
       return data;
@@ -1414,8 +1447,8 @@ export class Utils {
       // 将原文件替换
       handleReplace();
 
-      if (isHookImport) {
-        newData = Utils.insertImports(newData, isSingleQuote);
+      if (hookImport) {
+        newData = Utils.insertImports(newData, hookImport);
       }
     }
     return newData;

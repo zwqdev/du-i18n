@@ -112,7 +112,7 @@ export async function activate(context: vscode.ExtensionContext) {
               const isSingleQuote = config.getIsSingleQuote();
               const keyBoundaryChars = config.getKeyBoundaryChars();
               const vueReg = config.getVueReg();
-              const isHookImport = config.getIsHookImport();
+              const isHookImport = config.getHookImport();
               // console.log("vueReg", vueReg);
               const handleRefresh = async () => {
                 await config.refreshGlobalLangObj();
@@ -198,7 +198,7 @@ export async function activate(context: vscode.ExtensionContext) {
                   const isNeedRandSuffix = config.getIsNeedRandSuffix();
                   const keyBoundaryChars = config.getKeyBoundaryChars();
                   const vueReg = config.getVueReg();
-                  const isHookImport = config.getIsHookImport();
+                  const isHookImport = config.getHookImport();
 
                   Utils.handleScanAndInit(
                     fileName,

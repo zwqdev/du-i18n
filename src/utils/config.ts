@@ -35,7 +35,7 @@ export class Config {
   private isNeedRandSuffix: boolean;
   private isSingleQuote: boolean;
   private isOnlineTrans: boolean;
-  private isHookImport: boolean;
+  private hookImport: string;
   private baiduAppid: string;
   private baiduSecrectKey: string;
   private fileReg: RegExp;
@@ -76,7 +76,7 @@ export class Config {
     this.prefixKey = null; // key前缀
     this.keyJoinStr = null; // key连接符
 
-    this.isHookImport = false; // 是否需要hook引入i18n
+    this.hookImport = ""; // 是否需要hook引入i18n
 
     this.isOnlineTrans = true; // 本地-是否支持在线翻译
     this.baiduAppid = "xxx"; // 百度翻译appid
@@ -127,7 +127,7 @@ export class Config {
         vueReg,
         keyJoinStr,
         keyBoundaryChars,
-        isHookImport,
+        hookImport,
         gjUserName = "yz_admin",
         gjPassword = "yz123456",
       } = config || {};
@@ -172,8 +172,7 @@ export class Config {
       this.baiduSecrectKey = baiduSecrectKey;
       this.prefixKey = typeof prefixKey === "string" ? prefixKey : null;
       this.keyJoinStr = typeof keyJoinStr === "string" ? keyJoinStr : null;
-      this.isHookImport =
-        typeof isHookImport === "boolean" ? isHookImport : this.isHookImport;
+      this.hookImport = hookImport || "";
       // this.fileReg = fileReg || this.fileReg;
       this.vueReg = vueReg ? new RegExp(vueReg.slice(1, -1)) : this.vueReg;
       this.gjUserName = gjUserName;
@@ -227,20 +226,14 @@ export class Config {
       prefixKey: this.prefixKey,
       // key连接符，默认null为'.'
       keyJoinStr: this.keyJoinStr,
-      // 引用key的边界字符
-      keyBoundaryChars: this.keyBoundaryChars,
       // 跳过翻译漏检机制的key，打标已翻译
       uncheckMissKeys: this.uncheckMissKeys,
       // key的引用是单引号还是双引号，默认是单引号
       isSingleQuote: this.isSingleQuote,
       // 是否开启hook的i18n引入
-      isHookImport: this.isHookImport,
-      // 是否开启在线翻译
-      isOnlineTrans: this.isOnlineTrans,
-      // 本地-百度翻译appid
-      baiduAppid: this.baiduAppid,
-      // 本地-百度翻译密钥
-      baiduSecrectKey: this.baiduSecrectKey,
+      hookImport: this.hookImport,
+      gjUserName: this.gjUserName,
+      gjPassword: this.gjPassword,
     };
     return initConfig;
   }
@@ -269,8 +262,8 @@ export class Config {
     return this.localLangObj;
   }
 
-  getIsHookImport() {
-    return this.isHookImport;
+  getHookImport() {
+    return this.hookImport;
   }
 
   /**
