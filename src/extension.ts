@@ -8,8 +8,6 @@ import { MessageType, Message } from "./utils/message";
 const fs = require("fs");
 const path = require("path");
 const isEmpty = require("lodash/isEmpty");
-// import * as packageJson from "../package.json";
-
 import { ViewLoader } from "./view/ViewLoader";
 
 interface LangType {
@@ -291,7 +289,6 @@ export async function activate(context: vscode.ExtensionContext) {
 
             if (config.isOnline()) {
               const transSourceObj = config.getTransSourceObj();
-              // console.log('transSourceObj', transSourceObj);
               if (isEmpty(transSourceObj)) {
                 await config.setTransSourceObj((data) => {
                   handleTranslate(data);
@@ -304,16 +301,6 @@ export async function activate(context: vscode.ExtensionContext) {
               // 	action: "在线翻译-内部",
               // });
             } else {
-              // 调用百度翻译
-              if (config.getIsOnlineTrans() === false) {
-                if (!config.getBaiduAppid() || !config.getBaiduSecrectKey()) {
-                  vscode.window.showWarningMessage(
-                    `isOnlineTrans设置为false后，请开通百度翻译账号，并在du-i18n.config.json文件中设置自己专属的baiduAppid和baiduSecrectKey`
-                  );
-                  return;
-                }
-              }
-
               const activeEditor = vscode.window.activeTextEditor;
               if (activeEditor) {
                 const { fileName } = activeEditor.document || {};
@@ -333,12 +320,19 @@ export async function activate(context: vscode.ExtensionContext) {
                     return;
                   }
                   const localLangObj = eval(`(${data})`);
+
+                  const login = await Utils.getCookie(config.getAccount());
+
+                  if (login?.code !== "000000") {
+                    Message.showMessage(login?.msg || "登录失败");
+                    return;
+                  }
                   // 调用百度翻译
                   const { transSourceObj, message } =
                     await Utils.getTransSourceObjByLlm(
                       localLangObj,
                       langKey,
-                      config.getCookie()
+                      `test_gj_ticket=${login.data}`
                     );
                   if (!isEmpty(transSourceObj)) {
                     handleTranslate(transSourceObj, fileName);
@@ -407,34 +401,28 @@ export async function activate(context: vscode.ExtensionContext) {
               // 	action: "在线翻译-内部",
               // });
             } else {
-              // 批量调用百度翻译
-              const baiduAppid = config.getBaiduAppid();
-              const baiduSecrectKey = config.getBaiduSecrectKey();
-              if (!baiduAppid || !baiduSecrectKey) {
-                Message.showMessage(
-                  `批量翻译，请开通百度翻译账号，并在du-i18n.config.json文件中设置自己专属的baiduAppid和baiduSecrectKey`,
-                  MessageType.WARNING
-                );
-                return;
-              }
-
               // 返回没有翻译的文件集合
               const resultObj: any = await config.handleMissingDetection(
                 "filePath"
               );
 
+              const login = await Utils.getCookie(config.getAccount());
+
+              if (login?.code !== "000000") {
+                Message.showMessage(login?.msg || "登录失败");
+                return;
+              }
               const requestList = Object.entries(resultObj).map(
                 ([key, value]) => {
                   const fileName = key;
                   const transObj = value;
                   const task = async () => {
-                    // 调用百度翻译
                     try {
                       const { transSourceObj, message } =
                         await Utils.getTransSourceObjByLlm(
                           transObj,
                           langKey,
-                          config.getCookie()
+                          `test_gj_ticket=${login.data}`
                         );
                       if (!isEmpty(transSourceObj)) {
                         handleTranslate(transSourceObj, fileName);
@@ -453,7 +441,6 @@ export async function activate(context: vscode.ExtensionContext) {
 
               Utils.limitedParallelRequests(requestList, 1)
                 .then((result) => {
-                  console.log("result", result);
                   if (Array.isArray(result)) {
                     const allSuccess = result.every(
                       (item) => item.code === 200

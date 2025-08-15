@@ -41,7 +41,9 @@ export class Config {
   private fileReg: RegExp;
   private jsonReg: RegExp;
   private vueReg: RegExp;
-  private cookie: string;
+  private gjUserName: string;
+  private gjPassword: string;
+  public isLogin: boolean;
 
   constructor(props: any = {}) {
     // 默认将配置文件放在工作区的 .vscode 目录
@@ -83,7 +85,9 @@ export class Config {
     this.fileReg = /\.(ts|js|tsx|jsx|vue|html|mpx)$/; // 识别的文件
     this.jsonReg = /\.(json)$/; // json文件
     this.vueReg = /\.(vue)$/; // vue文件
-    this.cookie = ""; // cookie
+    this.isLogin = false; // 登录状态
+    this.gjUserName = "yz_admin"; // 用户名
+    this.gjPassword = "yz123456"; // 密码
   }
   async readConfig() {
     // 优先直接读取工作区 .vscode/du-i18n.config.json（绝对路径）
@@ -124,9 +128,9 @@ export class Config {
         keyJoinStr,
         keyBoundaryChars,
         isHookImport,
-        cookie = "",
+        gjUserName = "yz_admin",
+        gjPassword = "yz123456",
       } = config || {};
-      this.cookie = cookie;
       this.projectName = projectName;
       this.projectShortName = projectShortName;
       this.onlineApiUrl = onlineApiUrl;
@@ -172,6 +176,8 @@ export class Config {
         typeof isHookImport === "boolean" ? isHookImport : this.isHookImport;
       // this.fileReg = fileReg || this.fileReg;
       this.vueReg = vueReg ? new RegExp(vueReg.slice(1, -1)) : this.vueReg;
+      this.gjUserName = gjUserName;
+      this.gjPassword = gjPassword;
     };
 
     try {
@@ -235,14 +241,10 @@ export class Config {
       baiduAppid: this.baiduAppid,
       // 本地-百度翻译密钥
       baiduSecrectKey: this.baiduSecrectKey,
-      // cookie
-      cookie: this.cookie,
     };
     return initConfig;
   }
-  getCookie() {
-    return this.cookie;
-  }
+
   getConfigFilePath() {
     return this.configFilePath;
   }
@@ -376,6 +378,13 @@ export class Config {
 
   getVueReg() {
     return this.vueReg;
+  }
+
+  getAccount() {
+    return {
+      username: this.gjUserName,
+      password: this.gjPassword,
+    };
   }
 
   getCurLangObj(userKey: string = "") {

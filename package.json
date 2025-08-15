@@ -272,6 +272,8 @@
     "conventional-changelog-cli": "^2.2.2",
     "conventional-changelog-gitmoji-config": "^1.4.4",
     "got": "^11.8.2",
+    "js-md5": "^0.8.3",
+    "jsencrypt": "^3.5.4",
     "lodash": "^4.17.21",
     "md5": "^2.3.0",
     "measurement-protocol": "^0.1.1",

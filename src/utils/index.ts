@@ -3,6 +3,7 @@ import MapCache from "./cache";
 import { Baidu } from "./baidu";
 import { FileIO } from "./fileIO";
 import { Message } from "./message";
+import { loginByAccount } from "./api";
 const path = require("path");
 const fs = require("fs");
 const YAML = require("yaml");
@@ -1493,6 +1494,13 @@ export class Utils {
     }
 
     // 为 qArr 中每个文本生成一个翻译请求任务（不使用本地缓存）
+    let wordCount = 1;
+    let statusBarItem: vscode.StatusBarItem | undefined;
+    statusBarItem = vscode.window.createStatusBarItem(
+      vscode.StatusBarAlignment.Left
+    );
+    statusBarItem.text = `$(sync~spin) 正在翻译${wordCount}/${qArr.length}`;
+    statusBarItem.show();
     const taskList: (() => Promise<{ q: string[]; data: any }>)[] = qArr.map(
       (q) => async () => {
         return new Promise<{ q: string[]; data: any }>(
@@ -1503,6 +1511,8 @@ export class Utils {
               cookie,
             };
             const { data } = await Baidu.getTranslate(params);
+            wordCount++;
+            statusBarItem.text = `$(sync~spin) 正在翻译${wordCount}/${qArr.length}`;
             if (!data || !data.data) {
               reject(new Error((data && data.msg) || "翻译失败"));
               return;
@@ -1512,13 +1522,8 @@ export class Utils {
         );
       }
     );
-    let statusBarItem: vscode.StatusBarItem | undefined;
+
     try {
-      statusBarItem = vscode.window.createStatusBarItem(
-        vscode.StatusBarAlignment.Left
-      );
-      statusBarItem.text = "$(sync~spin) 正在批量翻译...";
-      statusBarItem.show();
       const results = await Utils.limitedParallelRequests<{
         q: string[];
         data: any;
@@ -1657,5 +1662,11 @@ export class Utils {
       .map(runNext);
     await Promise.all(runners);
     return results;
+  }
+
+  static async getCookie(account: { username: string; password: string }) {
+    const { username, password } = account;
+    // 这里是获取cookie的逻辑
+    return loginByAccount(username, password);
   }
 }
