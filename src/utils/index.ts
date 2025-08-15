@@ -13,15 +13,14 @@ const chunk = require("lodash/chunk");
 
 // 频繁调用，缓存计算结果
 const RegCache = new MapCache();
-// 翻译缓存：key => sourceText, value => data.data (Baidu返回的lang->trans映射)
-const TransCache = new MapCache();
+// ...existing code...
 const chineseCharReg = /[\u4e00-\u9fa5]/;
 const chineseChar2Reg = /[\u4e00-\u9fa5]+|[\u4e00-\u9fa5]/g;
 const varReg = /\$\{(.[^\}]+)?\}/g; // 判断包含${}的正则
 let decorationType = null;
 const globalPkgPath = "**/package.json";
 const boundaryCodes = ['"', "'", "`"]; // 字符串边界
-const SPLIT = "\n";
+const SPLIT = "-----sss--";
 
 export class Utils {
   /**
@@ -1464,13 +1463,13 @@ export class Utils {
       }
     });
 
-    const getTransText = (obj: any = {}, max: number = 1) => {
+    const getTransText = (obj: any = {}, max: number = 10) => {
       // 统一处理所有换行符为 <br>
       // const normalizeNewline = (str: string) => {
       //   return str.replace(/\r\n|\r|\n/g, nt);
       // };
-
-      return Object.keys(obj);
+      const keys = Object.keys(obj);
+      return chunk(keys, max);
     };
 
     const langMap = {
@@ -1493,35 +1492,14 @@ export class Utils {
       return result;
     }
 
-    // 缓存优先：检查哪些 q 已有缓存，只有未缓存的才生成请求任务
-    const uncachedQs: string[] = [];
-    // 直接使用源文本作为缓存 key（无需包含 cookie）
-    const qCacheKey = (q: string) => q;
-    qArr.forEach((q) => {
-      const cacheData = TransCache.get(qCacheKey(q));
-      if (cacheData && cacheData.data) {
-        // 将缓存结果直接写入 transSourceObj
-        Object.keys(cacheData.data).forEach((key) => {
-          const lang = resMap[key];
-          const trans = cacheData.data[key];
-          if (!transSourceObj[lang]) {
-            transSourceObj[lang] = {};
-          }
-          transSourceObj[lang][q] = trans;
-        });
-      } else {
-        uncachedQs.push(q);
-      }
-    });
-
-    // 每个未缓存分组生成一个task
-    const taskList: (() => Promise<{ q: string; data: any }>)[] =
-      uncachedQs.map((q) => async () => {
-        return new Promise<{ q: string; data: any }>(
+    // 为 qArr 中每个文本生成一个翻译请求任务（不使用本地缓存）
+    const taskList: (() => Promise<{ q: string[]; data: any }>)[] = qArr.map(
+      (q) => async () => {
+        return new Promise<{ q: string[]; data: any }>(
           async (resolve, reject) => {
             const params = {
               inputLanguage: langMap["zh"],
-              query: q,
+              query: q.join(SPLIT),
               cookie,
             };
             const { data } = await Baidu.getTranslate(params);
@@ -1529,16 +1507,11 @@ export class Utils {
               reject(new Error((data && data.msg) || "翻译失败"));
               return;
             }
-            // 写入缓存
-            try {
-              TransCache.set(qCacheKey(q), { q, data });
-            } catch (e) {
-              // ignore cache set errors
-            }
             resolve({ q, data });
           }
         );
-      });
+      }
+    );
     let statusBarItem: vscode.StatusBarItem | undefined;
     try {
       statusBarItem = vscode.window.createStatusBarItem(
@@ -1547,20 +1520,21 @@ export class Utils {
       statusBarItem.text = "$(sync~spin) 正在批量翻译...";
       statusBarItem.show();
       const results = await Utils.limitedParallelRequests<{
-        q: string;
+        q: string[];
         data: any;
       }>(taskList, 10);
 
       // 合并本次请求结果
       results.forEach(({ q, data }) => {
-        const source = q;
         Object.keys(data.data).forEach((key) => {
           const lang = resMap[key];
-          const trans = data.data[key];
+          const trans = data.data[key].split(SPLIT);
           if (!transSourceObj[lang]) {
             transSourceObj[lang] = {};
           }
-          transSourceObj[lang][source] = trans;
+          q.forEach((v, k) => {
+            transSourceObj[lang][v] = trans[k]?.trim();
+          });
         });
       });
 
