@@ -40,10 +40,10 @@ export class Config {
   private baiduSecrectKey: string;
   private fileReg: RegExp;
   private jsonReg: RegExp;
-  private vueReg: RegExp;
   private gjUserName: string;
   private gjPassword: string;
   public isLogin: boolean;
+  private transBatchSize: number; // 翻译批次大小（可配置）
 
   constructor(props: any = {}) {
     // 默认将配置文件放在工作区的 .vscode 目录
@@ -84,10 +84,10 @@ export class Config {
 
     this.fileReg = /\.(ts|js|tsx|jsx|vue|html|mpx)$/; // 识别的文件
     this.jsonReg = /\.(json)$/; // json文件
-    this.vueReg = /\.(vue)$/; // vue文件
     this.isLogin = false; // 登录状态
     this.gjUserName = 'yz_admin'; // 用户名
     this.gjPassword = 'yz123456'; // 密码
+    this.transBatchSize = 10; // 默认翻译批次大小
   }
   async readConfig() {
     // 优先直接读取工作区 .vscode/yz-i18n.config.json（绝对路径）
@@ -124,10 +124,10 @@ export class Config {
         baiduAppid,
         baiduSecrectKey,
         prefixKey,
-        vueReg,
         keyJoinStr,
         keyBoundaryChars,
         hookImport,
+        transBatchSize,
         gjUserName = 'yz_admin',
         gjPassword = 'yz123456',
       } = config || {};
@@ -173,8 +173,10 @@ export class Config {
       this.prefixKey = typeof prefixKey === 'string' ? prefixKey : null;
       this.keyJoinStr = typeof keyJoinStr === 'string' ? keyJoinStr : null;
       this.hookImport = hookImport || '';
+      if (typeof transBatchSize === 'number' && transBatchSize > 0) {
+        this.transBatchSize = transBatchSize;
+      }
       // this.fileReg = fileReg || this.fileReg;
-      this.vueReg = vueReg ? new RegExp(vueReg.slice(1, -1)) : this.vueReg;
       this.gjUserName = gjUserName;
       this.gjPassword = gjPassword;
     };
@@ -202,6 +204,10 @@ export class Config {
         }
       }
     });
+  }
+
+  getTransBatchSize() {
+    return this.transBatchSize;
   }
 
   getInitConfig() {
@@ -367,10 +373,6 @@ export class Config {
 
   getBaiduSecrectKey() {
     return this.baiduSecrectKey;
-  }
-
-  getVueReg() {
-    return this.vueReg;
   }
 
   getAccount() {

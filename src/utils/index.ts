@@ -16,7 +16,8 @@ import traverse from '@babel/traverse';
 import * as t from '@babel/types';
 import generate from '@babel/generator';
 import { parse as vueSfcParse } from '@vue/compiler-sfc';
-import * as compilerDom from '@vue/compiler-dom';
+import { baseParse as vueBaseParse, NodeTypes } from '@vue/compiler-dom';
+// removed unused: compilerDom
 
 // 频繁调用，缓存计算结果
 const RegCache = new MapCache();
@@ -28,6 +29,8 @@ let decorationType = null;
 const globalPkgPath = '**/package.json';
 const boundaryCodes = ['"', "'", '`']; // 字符串边界
 const SPLIT = '-----sss--';
+// 统一翻译批次大小默认值（可通过配置覆盖）
+export const DEFAULT_TRANS_BATCH_SIZE = 10;
 
 export class Utils {
   /**
@@ -404,9 +407,6 @@ export class Utils {
     quoteKeys: string[],
     defaultLang: string,
     prefixKey: string,
-    isSingleQuote: boolean,
-    keyBoundaryChars: string[],
-    vueReg: RegExp,
     hookImport: string,
     cb: Function
   ) {
@@ -418,9 +418,6 @@ export class Utils {
         quoteKeys,
         defaultLang,
         prefixKey,
-        isSingleQuote,
-        keyBoundaryChars,
-        vueReg,
         hookImport
       )
         .then((newLangObj: any) => {
@@ -441,445 +438,450 @@ export class Utils {
     quoteKeys: string[],
     defaultLang: string,
     prefixKey: string,
-    isSingleQuote: boolean,
-    keyBoundaryChars: string[],
-    vueReg: RegExp,
     hookImport: string
   ) {
     try {
       const code = fs.readFileSync(filePath, 'utf-8');
 
-      // Vue SFC: attempt to use @vue/compiler-sfc and @vue/compiler-dom for template AST
-      if (vueReg.test(filePath)) {
-        try {
-          const { descriptor } = vueSfcParse(code);
-          let finalCode = code;
-          const foundList: string[] = [];
-
-          // process template (simple string-based replacements to avoid compiler-dom API differences)
-          if (descriptor.template && descriptor.template.content) {
-            let templateContent = descriptor.template.content;
-            const containsChinese = (s: string) => /[\u4e00-\u9fa5]/.test(s);
-            const allocateKeyLocal = (val: string) => {
-              const idx = foundList.length;
-              foundList.push(val);
-              return `${prefixKey}${idx}`;
-            };
-            // replace plain text nodes: conservative approach using proper Vue interpolation
-            templateContent = templateContent.replace(
-              />([^<>]*)</g,
-              (m, inner) => {
-                if (!inner) return m;
-                const trimmed = inner.trim();
-                // skip if already contains i18n usage or interpolation
-                if (!trimmed || /\$t\(|{{|}}/.test(trimmed)) return m;
-                if (containsChinese(trimmed)) {
-                  const key = allocateKeyLocal(trimmed);
-                  return `>{{ $t('${key}') }}<`;
-                }
-                return m;
-              }
-            );
-
-            // replace attribute values like attr="中文" => :attr="$t('key')"
-            templateContent = templateContent.replace(
-              /(\s+)([\w-:@]+)=['"]([^'\"]*?[\u4e00-\u9fa5][^'\"]*?)['"]/g,
-              (m, pre, name, val) => {
-                const trimmed = val.trim();
-                if (/\$t\(|{{|}}/.test(trimmed)) return m;
-                const key = allocateKeyLocal(trimmed);
-                return `${pre}:${name}="$t('${key}')"`;
-              }
-            );
-
-            finalCode = finalCode.replace(
-              descriptor.template.content,
-              templateContent
-            );
-          }
-
-          // process script part with babel (reuse below script handling)
-          if (descriptor.script && descriptor.script.content) {
-            const scriptContent = descriptor.script.content;
-            // parse script content with babel
-            const pluginsScript: any[] = [
-              'classProperties',
-              'dynamicImport',
-              'optionalChaining',
-            ];
-            if (
-              filePath.endsWith('.ts') ||
-              filePath.endsWith('.tsx') ||
-              descriptor.script.lang === 'ts'
-            )
-              pluginsScript.push('typescript');
-            if (filePath.endsWith('.tsx')) pluginsScript.push('jsx');
-
-            const scriptAst = babelParser.parse(scriptContent, {
-              sourceType: 'module',
-              plugins: pluginsScript,
-            });
-
-            // collect and replace in script AST similar to non-vue flow
-            const scriptFound: string[] = [];
-            const containsChinese = (s: string) => /[\u4e00-\u9fa5]/.test(s);
-            traverse(scriptAst, {
-              StringLiteral(path: any) {
-                const val = path.node.value;
-                if (!val || !containsChinese(val)) return;
-                const key = `${prefixKey}${scriptFound.length}`;
-                scriptFound.push(val);
-                const callee = t.identifier(quoteKeys[1] || 'i18n.t');
-                const call = t.callExpression(callee, [t.stringLiteral(key)]);
-                path.replaceWith(call);
-              },
-              TemplateLiteral(path: any) {
-                const quasis = path.node.quasis;
-                const expressions = path.node.expressions;
-                let combined = '';
-                for (let i = 0; i < quasis.length; i++) {
-                  combined += quasis[i].value.cooked;
-                  if (i < expressions.length) combined += `{${i}}`;
-                }
-                if (!containsChinese(combined)) return;
-                const key = `${prefixKey}${scriptFound.length}`;
-                scriptFound.push(combined);
-                const callee = t.identifier(quoteKeys[1] || 'i18n.t');
-                const args: any[] = [t.stringLiteral(key)];
-                if (expressions && expressions.length)
-                  args.push(t.arrayExpression(expressions));
-                const call = t.callExpression(callee, args);
-                path.replaceWith(call);
-              },
-              JSXText(path: any) {
-                const val = path.node.value && path.node.value.trim();
-                if (!val || !containsChinese(val)) return;
-                const key = `${prefixKey}${scriptFound.length}`;
-                scriptFound.push(val);
-                const callee = t.identifier(quoteKeys[0] || '$t');
-                const call = t.callExpression(callee, [t.stringLiteral(key)]);
-                const expr = t.jSXExpressionContainer(call);
-                path.replaceWith(expr);
-              },
-            });
-
-            const outScript = generate(
-              scriptAst,
-              { retainLines: true },
-              scriptContent
-            );
-            finalCode = finalCode.replace(scriptContent, outScript.code);
-
-            // ensure hook import exists in SFC script if provided
-            if (hookImport) {
-              finalCode = Utils.insertImports(finalCode, hookImport);
-            }
-
-            // merge found lists
-            foundList.push(...scriptFound);
-          }
-
-          if (!foundList.length) return null;
-
-          // write finalCode
-          FileIO.handleWriteStream(filePath, finalCode, () => {});
-
-          const varObj: any = Utils.getVarObj(foundList);
-          const newLangObj = Utils.getGenerateNewLangObj(
-            foundList,
-            defaultLang,
-            initLang,
-            prefixKey,
-            varObj
-          );
-          return newLangObj;
-        } catch (e) {
-          // processing error for vue SFC
-          return null;
-        }
+      // Vue 单文件组件处理
+      if (/\.vue$/.test(filePath)) {
+        return Utils._processVueSfc(filePath, code, {
+          quoteKeys,
+          prefixKey,
+          defaultLang,
+          initLang,
+          hookImport,
+        });
       }
 
-      const isJsx = /\.(jsx|tsx)$/.test(filePath);
-      const isScript = /\.(js|ts|jsx|tsx)$/.test(filePath);
-      if (!isScript) return null;
+      // 普通脚本 / JSX / TSX 处理
+      if (/\.(js|ts|jsx|tsx)$/.test(filePath)) {
+        const {
+          code: outCode,
+          found,
+          varObj,
+        } = Utils._transformScriptContent(code, filePath, {
+          quoteKeys,
+          prefixKey,
+          jsx: /\.(jsx|tsx)$/.test(filePath),
+        });
+        if (!found.length) return null;
+        FileIO.handleWriteStream(filePath, outCode, () => {});
+        return Utils.getGenerateNewLangObj(
+          found,
+          defaultLang,
+          initLang,
+          prefixKey,
+          { ...varObj, ...Utils.getVarObj(found) }
+        );
+      }
+      return null; // 非支持类型
+    } catch (e) {
+      return null;
+    }
+  }
 
-      const plugins: any[] = [
-        'classProperties',
-        'dynamicImport',
-        'optionalChaining',
-      ];
-      if (filePath.endsWith('.ts') || filePath.endsWith('.tsx'))
-        plugins.push('typescript');
-      if (isJsx || filePath.endsWith('.tsx')) plugins.push('jsx');
+  // ===== 以下为 AST 辅助与拆分的子方法 =====
+  private static _containsChinese(s: string) {
+    return /[\u4e00-\u9fa5]/.test(s);
+  }
 
-      const ast = babelParser.parse(code, {
+  private static _createGuards() {
+    const isInsideConsoleCall = (path: any) => {
+      let p = path.parentPath;
+      while (p) {
+        if (p.isCallExpression && p.isCallExpression()) {
+          const callee = p.node.callee;
+          if (
+            t.isMemberExpression(callee) &&
+            t.isIdentifier(callee.object, { name: 'console' })
+          )
+            return true;
+        }
+        p = p.parentPath;
+      }
+      return false;
+    };
+    const isInsideDecorator = (path: any) => {
+      let p = path.parentPath;
+      while (p) {
+        if (p.node && p.node.type === 'Decorator') return true;
+        p = p.parentPath;
+      }
+      return false;
+    };
+    return { isInsideConsoleCall, isInsideDecorator };
+  }
+
+  private static _buildCallee(name: string) {
+    if (!name) return t.identifier('$t');
+    if (name.indexOf('.') > -1) {
+      const parts = name.split('.');
+      let e: any = t.identifier(parts[0]);
+      for (let i = 1; i < parts.length; i++) {
+        e = t.memberExpression(e, t.identifier(parts[i]));
+      }
+      return e;
+    }
+    return t.identifier(name);
+  }
+
+  private static _nodeCode(node: any) {
+    try {
+      return generate(node).code;
+    } catch (e) {
+      return '';
+    }
+  }
+
+  private static _isInsideI18nCall(path: any, calleeName: string) {
+    let p = path.parentPath;
+    while (p) {
+      if (p.isCallExpression && p.isCallExpression()) {
+        try {
+          const c = generate(p.node.callee).code;
+          if (c === calleeName) return true;
+        } catch (e) {}
+      }
+      p = p.parentPath;
+    }
+    return false;
+  }
+
+  private static _transformScriptContent(
+    scriptContent: string,
+    filePath: string,
+    opts: {
+      quoteKeys: string[];
+      prefixKey: string;
+      jsx?: boolean;
+      forceTs?: boolean;
+    }
+  ): { code: string; found: string[]; varObj: any } {
+    const { quoteKeys, prefixKey, forceTs } = opts;
+    const plugins: any[] = [
+      'classProperties',
+      'dynamicImport',
+      'optionalChaining',
+    ];
+    const isTs =
+      !!forceTs ||
+      /\.(ts|tsx)$/.test(filePath) ||
+      /lang=\"ts\"/.test(scriptContent);
+    if (isTs) plugins.push('typescript');
+    if (opts.jsx || filePath.endsWith('.tsx')) plugins.push('jsx');
+    if (/@[A-Za-z_]/.test(scriptContent)) plugins.push('decorators-legacy');
+
+    let ast: any;
+    try {
+      ast = babelParser.parse(scriptContent, {
         sourceType: 'module',
         plugins,
       });
+    } catch (e) {
+      return { code: scriptContent, found: [], varObj: {} };
+    }
 
-      const foundList: string[] = [];
-      const varObj: Record<string, { newKey: string; varList: string[] }> = {};
+    const { isInsideConsoleCall, isInsideDecorator } = Utils._createGuards();
+    const found: string[] = [];
+    const varObj: Record<string, { newKey: string; varList: string[] }> = {};
+    const scriptCalleeName = quoteKeys[1] || 'i18n.t';
+    const jsxCalleeName = quoteKeys[0] || '$t';
+    const allocateKey = (original: string) => {
+      const idx = found.length;
+      found.push(original);
+      return `${prefixKey}${idx}`;
+    };
 
-      const allocateKey = (original: string) => {
-        const idx = foundList.length;
-        foundList.push(original);
-        return `${prefixKey}${idx}`;
-      };
-
-      const containsChinese = (s: string) => /[\u4e00-\u9fa5]/.test(s);
-
-      const genCode = (node: any) => {
-        try {
-          return generate(node).code;
-        } catch (e) {
-          return '';
-        }
-      };
-
-      const flattenConcat = (
-        node: any
-      ): { parts: (string | null)[]; exprs: any[] } | null => {
-        // recursively flatten BinaryExpression '+' chains
-        if (!node) return null;
-        if (t.isBinaryExpression(node) && node.operator === '+') {
-          const left = flattenConcat(node.left);
-          const right = flattenConcat(node.right);
-          if (!left || !right) return null;
-          return {
-            parts: [...left.parts, ...right.parts],
-            exprs: [...left.exprs, ...right.exprs],
-          };
-        }
-        if (t.isStringLiteral(node)) {
-          return { parts: [node.value], exprs: [] };
-        }
-        // expression node
-        return { parts: [null], exprs: [node] };
-      };
-
-      const buildCallee = (name: string) => {
-        if (!name) return t.identifier('$t');
-        if (name.indexOf('.') > -1) {
-          const parts = name.split('.');
-          let e: any = t.identifier(parts[0]);
-          for (let i = 1; i < parts.length; i++) {
-            e = t.memberExpression(e, t.identifier(parts[i]));
+    traverse(ast, {
+      StringLiteral(path: any) {
+        const val = path.node.value;
+        if (!val || !Utils._containsChinese(val)) return;
+        if (isInsideConsoleCall(path) || isInsideDecorator(path)) return;
+        if (
+          Utils._isInsideI18nCall(path, scriptCalleeName) ||
+          Utils._isInsideI18nCall(path, jsxCalleeName)
+        )
+          return;
+        const key = allocateKey(val);
+        path.replaceWith(
+          t.callExpression(Utils._buildCallee(scriptCalleeName), [
+            t.stringLiteral(key),
+          ])
+        );
+      },
+      TemplateLiteral(path: any) {
+        const quasis = path.node.quasis;
+        const expressions = path.node.expressions;
+        const hasChinese = quasis.some((q: any) =>
+          Utils._containsChinese(q.value.cooked)
+        );
+        if (!hasChinese) return;
+        if (isInsideConsoleCall(path) || isInsideDecorator(path)) return;
+        if (
+          Utils._isInsideI18nCall(path, scriptCalleeName) ||
+          Utils._isInsideI18nCall(path, jsxCalleeName)
+        )
+          return;
+        const originalCode = Utils._nodeCode(path.node);
+        const parts: string[] = [];
+        const varList: string[] = [];
+        for (let i = 0; i < quasis.length; i++) {
+          parts.push(quasis[i].value.cooked || '');
+          if (i < expressions.length) {
+            parts.push(`{${varList.length}}`);
+            varList.push(Utils._nodeCode(expressions[i]));
           }
-          return e;
         }
-        return t.identifier(name);
-      };
-
-      // helper: determine if current path is already within a call to the given calleeName
-      const isInsideI18nCall = (path: any, calleeName: string) => {
-        let p = path.parentPath;
-        while (p) {
-          if (p.isCallExpression && p.isCallExpression()) {
-            try {
-              const code = generate(p.node.callee).code;
-              if (code === calleeName) return true;
-            } catch (e) {
-              // ignore
+        // 去掉可能残留的反引号
+        let builtKey = parts.join('');
+        if (builtKey.startsWith('`') && builtKey.endsWith('`')) {
+          builtKey = builtKey.slice(1, -1);
+        }
+        varObj[originalCode] = { newKey: builtKey, varList };
+        const key = allocateKey(originalCode);
+        const callArgs: any[] = [t.stringLiteral(key)];
+        if (expressions.length)
+          callArgs.push(t.arrayExpression(expressions as any));
+        path.replaceWith(
+          t.callExpression(Utils._buildCallee(scriptCalleeName), callArgs)
+        );
+      },
+      JSXText(path: any) {
+        const val = path.node.value && path.node.value.trim();
+        if (!val || !Utils._containsChinese(val)) return;
+        const key = allocateKey(val);
+        const call = t.callExpression(Utils._buildCallee(jsxCalleeName), [
+          t.stringLiteral(key),
+        ]);
+        path.replaceWith(t.jSXExpressionContainer(call));
+      },
+      JSXAttribute(path: any) {
+        const attr = path.node;
+        if (!attr || !attr.value) return;
+        const processExpressions = (
+          originalCode: string,
+          quasis: any[],
+          expressions: any[],
+          key: string
+        ) => {
+          const parts: string[] = [];
+          const varList: string[] = [];
+          for (let i = 0; i < quasis.length; i++) {
+            parts.push(quasis[i].value.cooked || '');
+            if (i < expressions.length) {
+              parts.push(`{${varList.length}}`);
+              varList.push(Utils._nodeCode(expressions[i]));
             }
           }
-          p = p.parentPath;
-        }
-        return false;
-      };
-
-      // choose callee based on jsx vs script
-      const scriptCalleeName =
-        quoteKeys && quoteKeys[1] ? quoteKeys[1] : 'i18n.t';
-      const jsxCalleeName = quoteKeys && quoteKeys[0] ? quoteKeys[0] : '$t';
-
-      // traverse AST and replace literals / template literals / JSXText / JSXAttribute
-      traverse(ast, {
-        StringLiteral(path: any) {
-          try {
-            const val = path.node.value;
-            if (!val || !containsChinese(val)) return;
-            // avoid replacing in import declarations, object property keys, or if already inside i18n call
-            const parent = path.parentPath;
-            if (
-              (parent &&
-                parent.isImportDeclaration &&
-                parent.isImportDeclaration()) ||
-              (parent &&
-                parent.isObjectProperty &&
-                parent.isObjectProperty() &&
-                path.key === 'key') ||
-              isInsideI18nCall(path, scriptCalleeName) ||
-              isInsideI18nCall(path, jsxCalleeName)
-            )
-              return;
-            const key = allocateKey(val);
-            const callee = buildCallee(scriptCalleeName);
-            const call = t.callExpression(callee, [t.stringLiteral(key)]);
-            path.replaceWith(call);
-          } catch (e) {
-            // ignore
+          let builtAttrKey = parts.join('');
+          if (builtAttrKey.startsWith('`') && builtAttrKey.endsWith('`')) {
+            builtAttrKey = builtAttrKey.slice(1, -1);
           }
-        },
-        TemplateLiteral(path: any) {
-          try {
-            const quasis = path.node.quasis;
-            const expressions = path.node.expressions;
-            // check if any quasi contains Chinese
+          varObj[originalCode] = { newKey: builtAttrKey, varList };
+          const args: any[] = [t.stringLiteral(key)];
+          if (expressions.length)
+            args.push(t.arrayExpression(expressions as any));
+          return t.jSXExpressionContainer(
+            t.callExpression(Utils._buildCallee(jsxCalleeName), args)
+          );
+        };
+        if (
+          t.isStringLiteral(attr.value) &&
+          Utils._containsChinese(attr.value.value)
+        ) {
+          const key = allocateKey(attr.value.value);
+          attr.value = t.jSXExpressionContainer(
+            t.callExpression(Utils._buildCallee(jsxCalleeName), [
+              t.stringLiteral(key),
+            ])
+          );
+        } else if (t.isJSXExpressionContainer(attr.value)) {
+          const expr: any = attr.value.expression;
+          if (t.isTemplateLiteral(expr)) {
+            const quasis = expr.quasis;
+            const expressions = expr.expressions;
             const hasChinese = quasis.some((q: any) =>
-              containsChinese(q.value.cooked)
+              Utils._containsChinese(q.value.cooked)
             );
             if (!hasChinese) return;
-
-            // build original source and newKey/varList
-            const originalCode = genCode(path.node); // e.g. `你好 ${name}`
-            // skip if inside existing i18n call
-            if (
-              isInsideI18nCall(path, scriptCalleeName) ||
-              isInsideI18nCall(path, jsxCalleeName)
-            )
-              return;
-            const parts: string[] = [];
-            const varList: string[] = [];
-            for (let i = 0; i < quasis.length; i++) {
-              parts.push(quasis[i].value.cooked || '');
-              if (i < expressions.length) {
-                parts.push(`{${varList.length}}`);
-                varList.push(genCode(expressions[i]));
-              }
-            }
-            const newKey = parts.join('');
-            varObj[originalCode] = { newKey, varList };
+            const originalCode = Utils._nodeCode(expr);
             const key = allocateKey(originalCode);
-            const callee = buildCallee(scriptCalleeName);
-            const args: any[] = [t.stringLiteral(key)];
-            if (expressions && expressions.length)
-              args.push(t.arrayExpression(expressions as any));
-            const call = t.callExpression(callee, args);
-            path.replaceWith(call);
-          } catch (e) {
-            // ignore
+            attr.value = processExpressions(
+              originalCode,
+              quasis,
+              expressions,
+              key
+            );
           }
-        },
-        JSXText(path: any) {
-          try {
-            const val = path.node.value && path.node.value.trim();
-            if (!val || !containsChinese(val)) return;
-            const original = val;
-            const key = allocateKey(original);
-            const callee = buildCallee(jsxCalleeName);
-            const call = t.callExpression(callee, [t.stringLiteral(key)]);
-            const expr = t.jSXExpressionContainer(call);
-            path.replaceWith(expr);
-          } catch (e) {
-            // ignore
-          }
-        },
-        JSXAttribute(path: any) {
-          try {
-            const attr = path.node;
-            if (!attr || !attr.value) return;
-            // value can be Literal or JSXExpressionContainer
-            if (
-              t.isStringLiteral(attr.value) &&
-              containsChinese(attr.value.value)
-            ) {
-              const original = attr.value.value;
-              const key = allocateKey(original);
-              const callee = buildCallee(jsxCalleeName);
-              const call = t.callExpression(callee, [t.stringLiteral(key)]);
-              path.node.value = t.jSXExpressionContainer(call);
-            } else if (t.isJSXExpressionContainer(attr.value)) {
-              const expr = attr.value.expression;
-              // handle template literal or binary concat inside attribute
-              if (t.isTemplateLiteral(expr)) {
-                const originalCode = genCode(expr);
-                const parts: string[] = [];
-                const varList: string[] = [];
-                const quasis = expr.quasis;
-                const expressions = expr.expressions;
-                const hasChinese = quasis.some((q: any) =>
-                  containsChinese(q.value.cooked)
-                );
-                if (hasChinese) {
-                  for (let i = 0; i < quasis.length; i++) {
-                    parts.push(quasis[i].value.cooked || '');
-                    if (i < expressions.length) {
-                      parts.push(`{${varList.length}}`);
-                      varList.push(genCode(expressions[i]));
-                    }
+        }
+      },
+    });
+
+    const outScript = generate(ast, { retainLines: true }, scriptContent);
+    return { code: outScript.code, found, varObj };
+  }
+
+  private static _processVueSfc(
+    filePath: string,
+    code: string,
+    ctx: {
+      quoteKeys: string[];
+      prefixKey: string;
+      defaultLang: string;
+      initLang: string[];
+      hookImport: string;
+    }
+  ) {
+    try {
+      const { descriptor } = vueSfcParse(code);
+      let finalCode = code;
+      const foundList: string[] = [];
+      let vueVarObj: any = {};
+
+      // template AST 处理，替换正则方案
+      if (descriptor.template && descriptor.template.content) {
+        const originalTemplate = descriptor.template.content;
+        const tplAst: any = vueBaseParse(originalTemplate, { comments: true });
+        interface ReplaceItem {
+          start: number;
+          end: number;
+          text: string;
+        }
+        const replacements: ReplaceItem[] = [];
+        const allocateKeyLocal = (val: string) => {
+          const idx = foundList.length;
+          foundList.push(val);
+          return `${ctx.prefixKey}${idx}`;
+        };
+        const traverseNodes = (children: any[]) => {
+          if (!Array.isArray(children)) return;
+          children.forEach((node) => {
+            if (!node) return;
+            switch (node.type) {
+              case NodeTypes.TEXT: {
+                const raw = node.content as string;
+                if (raw && Utils._containsChinese(raw)) {
+                  const trimmed = raw.trim();
+                  // 已含 i18n 或 插值中文（延后由插值/脚本处理）跳过
+                  if (!/\$t\(/.test(trimmed)) {
+                    const key = allocateKeyLocal(trimmed);
+                    // 保留原始前后空白
+                    const leading = raw.match(/^[ \t\n\r]*/)[0];
+                    const trailing = raw.match(/[ \t\n\r]*$/)[0];
+                    const replacement = `${leading}{{ $t('${key}') }}${trailing}`;
+                    replacements.push({
+                      start: node.loc.start.offset,
+                      end: node.loc.end.offset,
+                      text: replacement,
+                    });
                   }
-                  varObj[originalCode] = { newKey: parts.join(''), varList };
-                  const key = allocateKey(originalCode);
-                  const callee = buildCallee(jsxCalleeName);
-                  const args: any[] = [t.stringLiteral(key)];
-                  if (expressions && expressions.length)
-                    args.push(t.arrayExpression(expressions as any));
-                  const call = t.callExpression(callee, args);
-                  path.node.value = t.jSXExpressionContainer(call);
                 }
-              } else if (t.isBinaryExpression(expr) && expr.operator === '+') {
-                const flat = flattenConcat(expr);
-                if (flat) {
-                  const parts: (string | null)[] = flat.parts;
-                  const exprNodes = flat.exprs;
-                  const hasChinese = parts.some(
-                    (p) => typeof p === 'string' && containsChinese(p)
-                  );
-                  if (hasChinese) {
-                    const originalCode = genCode(expr);
-                    const newParts: string[] = [];
-                    const varList: string[] = [];
-                    let exprIdx = 0;
-                    for (const p of parts) {
-                      if (p === null) {
-                        newParts.push(`{${varList.length}}`);
-                        varList.push(genCode(exprNodes[exprIdx++]));
-                      } else {
-                        newParts.push(p);
+                break;
+              }
+              case NodeTypes.ELEMENT: {
+                // 跳过 <script> / <style>（内部中文由脚本或样式处理，不在模板提取范围）
+                if (node.tag && /^(script|style)$/i.test(node.tag)) {
+                  break;
+                }
+                // 静态属性中文 -> 绑定
+                if (Array.isArray(node.props)) {
+                  node.props.forEach((prop: any) => {
+                    // ATTRIBUTE type = 6
+                    if (
+                      prop.type === NodeTypes.ATTRIBUTE &&
+                      prop.value &&
+                      prop.value.content &&
+                      Utils._containsChinese(prop.value.content)
+                    ) {
+                      const valueContent = prop.value.content;
+                      if (!/\$t\(/.test(valueContent)) {
+                        const key = allocateKeyLocal(valueContent.trim());
+                        const attrStart = prop.loc.start.offset;
+                        const attrEnd = prop.loc.end.offset;
+                        const attrName = prop.name;
+                        // 用绑定替换整个属性
+                        const replacement = `:${attrName}="$t('${key}')"`;
+                        replacements.push({
+                          start: attrStart,
+                          end: attrEnd,
+                          text: replacement,
+                        });
                       }
                     }
-                    varObj[originalCode] = {
-                      newKey: newParts.join(''),
-                      varList,
-                    };
-                    const key = allocateKey(originalCode);
-                    const callee = buildCallee(jsxCalleeName);
-                    const args: any[] = [t.stringLiteral(key)];
-                    if (exprNodes.length)
-                      args.push(t.arrayExpression(exprNodes));
-                    const call = t.callExpression(callee, args);
-                    path.node.value = t.jSXExpressionContainer(call);
-                  }
+                  });
                 }
+                if (node.children && node.children.length)
+                  traverseNodes(node.children);
+                break;
+              }
+              case NodeTypes.INTERPOLATION: {
+                // 暂不深入解析插值表达式中的中文（复杂情况交给脚本 AST），可按需扩展
+                break;
+              }
+              default: {
+                if (node.children) traverseNodes(node.children);
               }
             }
-          } catch (e) {
-            // ignore
-          }
-        },
+          });
+        };
+        traverseNodes(tplAst.children);
+        if (replacements.length) {
+          // 直接逆序应用到原模板文本
+          const sorted = replacements.sort((a, b) => b.start - a.start);
+          let newTemplate = originalTemplate;
+          sorted.forEach((r) => {
+            newTemplate =
+              newTemplate.slice(0, r.start) + r.text + newTemplate.slice(r.end);
+          });
+          finalCode = finalCode.replace(originalTemplate, newTemplate);
+        }
+      }
+
+      const scriptBlocks: Array<{ content: string; forceTs: boolean }> = [];
+      if (descriptor.script && descriptor.script.content) {
+        scriptBlocks.push({
+          content: descriptor.script.content,
+          forceTs: descriptor.script.lang === 'ts',
+        });
+      }
+      if (descriptor.scriptSetup && descriptor.scriptSetup.content) {
+        scriptBlocks.push({
+          content: descriptor.scriptSetup.content,
+          forceTs: descriptor.scriptSetup.lang === 'ts',
+        });
+      }
+      scriptBlocks.forEach(({ content: blockContent, forceTs }) => {
+        const {
+          code: newPart,
+          found,
+          varObj,
+        } = Utils._transformScriptContent(blockContent, filePath, {
+          quoteKeys: ctx.quoteKeys,
+          prefixKey: ctx.prefixKey,
+          jsx: filePath.endsWith('.tsx'),
+          forceTs,
+        });
+        if (found.length) {
+          finalCode = finalCode.replace(blockContent, newPart);
+          foundList.push(...found);
+          vueVarObj = { ...vueVarObj, ...varObj };
+        }
       });
 
-      // If nothing found, return null
       if (!foundList.length) return null;
-
-      const out = generate(ast, { retainLines: true }, code);
-      const newCode = out.code;
-
-      // write back using FileIO
-      FileIO.handleWriteStream(filePath, newCode, () => {});
-
-      // build newLangObj using varObj collected during traversal
-      const newLangObj = Utils.getGenerateNewLangObj(
+      if (ctx.hookImport)
+        finalCode = Utils.insertImports(finalCode, ctx.hookImport);
+      FileIO.handleWriteStream(filePath, finalCode, () => {});
+      const varObj: any = { ...vueVarObj, ...Utils.getVarObj(foundList) };
+      return Utils.getGenerateNewLangObj(
         foundList,
-        defaultLang,
-        initLang,
-        prefixKey,
-        varObj as any
+        ctx.defaultLang,
+        ctx.initLang,
+        ctx.prefixKey,
+        varObj
       );
-      return newLangObj;
     } catch (e) {
-      // parsing/processing error
-      // console.error("astProcessFile error", e);
       return null;
     }
   }
@@ -996,13 +998,13 @@ export class Utils {
       if (original.indexOf('${') === -1) return;
       const normalized = original.replace(/\\(\$\{)/g, '$1');
       const { newKey, varList } = parseTopLevelTemplate(normalized);
-      // 若原始字符串本身带反引号包裹且提取的 key 也需要用于替换，可保留（当前提取阶段通常不含反引号，这里仅防御性处理）
-      let finalKey = newKey;
-      if (original.startsWith('`') && original.endsWith('`')) {
-        finalKey = `\`${newKey}\``;
-      }
+      const cleanedKey =
+        newKey.startsWith('`') && newKey.endsWith('`')
+          ? newKey.slice(1, -1)
+          : newKey;
+      // 不再保留原始模板两侧反引号，统一使用纯文本 key 形式
       if (varList.length) {
-        varObj[original] = { newKey: finalKey, varList };
+        varObj[original] = { newKey: cleanedKey, varList };
       }
     });
     return varObj;
@@ -1841,77 +1843,93 @@ export class Utils {
     });
     return count;
   }
-
   static async getTransSourceObjByLlm(
     localLangObj: Object,
     defaultLang: string,
-    cookie: string
+    cookie: string,
+    progress?: {
+      total?: number; // 全部文件的总批次数
+      offset?: number; // 当前文件开始前已完成批次数
+      onUpdate?: (done: number, total: number) => void; // 进度回调
+      reuseStatusBar?: vscode.StatusBarItem; // 复用外部传入的状态栏
+      label?: string; // 自定义显示标签
+      suppressBatchStatus?: boolean; // 不实时更新批次进度文本，仅通过回调向外部汇总
+    },
+    options?: { batchSize?: number }
   ) {
-    const transSourceObj = {};
-    const result = { transSourceObj: null, message: '' };
-    if (isEmpty(localLangObj)) {
-      return result;
-    }
-    const defaultSource = localLangObj[defaultLang];
-    if (isEmpty(defaultSource)) {
-      return result;
-    }
-    const nt = '<br>';
-    // 获取源文案
-    Object.entries(localLangObj).map(([lang, obj]) => {
-      if (lang !== defaultLang) {
-        if (!transSourceObj[lang]) {
-          transSourceObj[lang] = {};
+    const transSourceObj: any = {};
+    const result: any = { transSourceObj: null, message: '', batchCount: 0 };
+    if (isEmpty(localLangObj)) return result;
+    const defaultSource = (localLangObj as any)[defaultLang];
+    if (isEmpty(defaultSource)) return result;
+
+    // 组织需要翻译的源文案：遍历除默认语言外的语言，收集缺失项
+    Object.entries(localLangObj).forEach(([lang, obj]) => {
+      if (lang === defaultLang) return;
+      if (!transSourceObj[lang]) transSourceObj[lang] = {};
+      Object.keys(obj as any).forEach((k) => {
+        if (!(obj as any)[k]) {
+          const keyStr = defaultSource[k];
+          transSourceObj[lang][keyStr] = (obj as any)[k];
         }
-        Object.keys(obj).forEach((k) => {
-          if (!obj[k]) {
-            const keyStr = defaultSource[k];
-            if (keyStr) {
-              // 有翻译源文案
-              transSourceObj[lang][keyStr] = obj[k];
-            }
-          }
-        });
-      }
+      });
     });
 
-    const getTransText = (obj: any = {}, max: number = 10) => {
-      // 统一处理所有换行符为 <br>
-      // const normalizeNewline = (str: string) => {
-      //   return str.replace(/\r\n|\r|\n/g, nt);
-      // };
+    const batchSize = options?.batchSize || DEFAULT_TRANS_BATCH_SIZE;
+    const getTransText = (obj: any = {}, max: number = batchSize) => {
       const keys = Object.keys(obj);
       return chunk(keys, max);
     };
 
-    const langMap = {
+    const langMap: any = {
       zh: '中文',
       en: '英文',
       ko: '韩文',
       ru: '俄文',
       vi: '越文',
     };
-    const resMap = {
+    const resMap: any = {
       中文: 'zh',
       英文: 'en',
       韩文: 'ko',
       俄文: 'ru',
       越文: 'vi',
     };
-    const qArr = getTransText(transSourceObj['en']); // 默认分组
+    const qArr = getTransText(transSourceObj['en']);
+    result.batchCount = qArr ? qArr.length : 0;
     if (!qArr || !qArr.length) {
       result.message = `${defaultLang}的源文案不能为空！`;
       return result;
     }
 
-    // 为 qArr 中每个文本生成一个翻译请求任务（不使用本地缓存）
-    let wordCount = 1;
-    let statusBarItem: vscode.StatusBarItem | undefined;
-    statusBarItem = vscode.window.createStatusBarItem(
-      vscode.StatusBarAlignment.Left
-    );
-    statusBarItem.text = `$(sync~spin) 正在翻译${wordCount}/${qArr.length}`;
-    statusBarItem.show();
+    // 状态栏与进度
+    let statusBarItem: vscode.StatusBarItem | undefined =
+      progress?.reuseStatusBar;
+    let internalCreated = false;
+    if (!statusBarItem && !progress?.suppressBatchStatus) {
+      statusBarItem = vscode.window.createStatusBarItem(
+        vscode.StatusBarAlignment.Left
+      );
+      internalCreated = true;
+      statusBarItem.show();
+    }
+    const label = progress?.label || '翻译';
+    const externalTotal = progress?.total; // 所有文件总批次数
+    const externalOffset = progress?.offset || 0; // 当前文件开始前完成批次数
+    const localTotal = qArr.length; // 当前文件批次数
+    let localDone = 0; // 当前文件已完成批次数
+    const updateBar = () => {
+      const total = externalTotal || localTotal;
+      const done = externalTotal
+        ? Math.min(externalOffset + localDone, total)
+        : localDone;
+      if (!progress?.suppressBatchStatus && statusBarItem) {
+        statusBarItem.text = `$(sync~spin) ${label} ${done}/${total}`;
+      }
+      if (progress?.onUpdate) progress.onUpdate(done, total);
+    };
+    if (!progress?.suppressBatchStatus) updateBar();
+
     const taskList: (() => Promise<{ q: string[]; data: any }>)[] = qArr.map(
       (q) => async () => {
         return new Promise<{ q: string[]; data: any }>(
@@ -1922,8 +1940,13 @@ export class Utils {
               cookie,
             };
             const { data } = await Baidu.getTranslate(params);
-            wordCount++;
-            statusBarItem.text = `$(sync~spin) 正在翻译${wordCount}/${qArr.length}`;
+            localDone++;
+            if (!progress?.suppressBatchStatus) {
+              updateBar();
+            } else if (progress?.onUpdate) {
+              // 外部需要分批次统计时仍发送 onUpdate
+              updateBar();
+            }
             if (!data || !data.data) {
               reject(new Error((data && data.msg) || '翻译失败'));
               return;
@@ -1939,33 +1962,55 @@ export class Utils {
         q: string[];
         data: any;
       }>(taskList, 10);
-
-      // 合并本次请求结果
       results.forEach(({ q, data }) => {
         Object.keys(data.data).forEach((key) => {
           const lang = resMap[key];
           const trans = data.data[key].split(SPLIT);
-          if (!transSourceObj[lang]) {
-            transSourceObj[lang] = {};
-          }
+          if (!transSourceObj[lang]) transSourceObj[lang] = {};
           q.forEach((v, k) => {
             transSourceObj[lang][v] = trans[k]?.trim();
           });
         });
       });
-
-      // 另外，将之前可能存在的缓存项（已在前面写入）和本次结果一起返回
       result.transSourceObj = transSourceObj;
       return result;
-    } catch (e) {
+    } catch (e: any) {
       Message.showMessage(e.message || '翻译失败');
       return result;
     } finally {
-      if (statusBarItem) {
+      if (statusBarItem && internalCreated) {
         statusBarItem.hide();
         statusBarItem.dispose();
       }
     }
+  }
+
+  // 预计算一个 localLangObj 在默认语言下需要翻译的批次数（用于多文件总进度计算）
+  static computeTransBatchCount(
+    localLangObj: any,
+    defaultLang: string,
+    maxPerBatch = DEFAULT_TRANS_BATCH_SIZE
+  ): number {
+    if (isEmpty(localLangObj)) return 0;
+    const defaultSource = localLangObj[defaultLang];
+    if (isEmpty(defaultSource)) return 0;
+    const transSourceObj: any = {};
+    Object.entries(localLangObj).map(([lang, obj]: any) => {
+      if (lang !== defaultLang) {
+        if (!transSourceObj[lang]) transSourceObj[lang] = {};
+        Object.keys(obj).forEach((k) => {
+          if (!obj[k]) {
+            const keyStr = defaultSource[k];
+            if (keyStr) {
+              transSourceObj[lang][keyStr] = obj[k];
+            }
+          }
+        });
+      }
+    });
+    const keys = Object.keys(transSourceObj['en'] || {});
+    if (!keys.length) return 0;
+    return Math.ceil(keys.length / maxPerBatch);
   }
 
   /**

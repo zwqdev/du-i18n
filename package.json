@@ -85,40 +85,12 @@
         "title": "批量在线翻译"
       },
       {
-        "command": "extension.du.i18n.updateLocalToOnline",
-        "title": "上传文案"
-      },
-      {
-        "command": "extension.du.i18n.batchUpdateLocalToOnline",
-        "title": "批量上传文案"
-      },
-      {
-        "command": "extension.du.i18n.missingDetection",
-        "title": "翻译漏检"
-      },
-      {
-        "command": "extension.du.i18n.updateLocalFromOnline",
-        "title": "拉取远程文案"
-      },
-      {
-        "command": "extension.du.i18n.searchUntranslateText",
-        "title": "远程漏检文案"
-      },
-      {
         "command": "extension.du.i18n.updateLocalLangPackage",
         "title": "刷新数据"
       },
       {
         "command": "extension.du.i18n.mergeLangFile",
         "title": "合并语言文件"
-      },
-      {
-        "command": "extension.du.i18n.splitLangFile",
-        "title": "拆分语言文件"
-      },
-      {
-        "command": "extension.du.i18n.analytics",
-        "title": "文件统计"
       },
       {
         "command": "extension.du.i18n.receive",
