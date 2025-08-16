@@ -406,6 +406,12 @@ export async function activate(context: vscode.ExtensionContext) {
                 'filePath'
               );
 
+              // 空结果或异常情况直接返回
+              if (!resultObj || isEmpty(resultObj)) {
+                Message.showMessage('没有需要翻译的内容');
+                return;
+              }
+
               const login = await Utils.getCookie(config.getAccount());
 
               if (login?.code !== '000000') {
@@ -413,8 +419,10 @@ export async function activate(context: vscode.ExtensionContext) {
                 return;
               }
               // 预聚合: 先算每个文件的批次数, 过滤掉无需翻译的文件
-              const fileEntries = Object.entries(resultObj).map(
-                ([fileName, transObj]: any) => ({
+              const fileEntries = Object.entries(resultObj)
+                // 过滤忽略的文件
+                .filter(([fileName]) => !config.isScanIgnored(fileName))
+                .map(([fileName, transObj]: any) => ({
                   fileName,
                   transObj,
                   batchCount: Utils.computeTransBatchCount(
@@ -422,8 +430,12 @@ export async function activate(context: vscode.ExtensionContext) {
                     langKey,
                     config.getTransBatchSize()
                   ),
-                })
-              );
+                }));
+
+              if (!fileEntries.length) {
+                Message.showMessage('所有文件已被 scanIgnoreGlobs 规则忽略');
+                return;
+              }
               const filtered = fileEntries.filter((f) => f.batchCount > 0);
               if (!filtered.length) {
                 Message.showMessage('没有需要翻译的内容');
@@ -443,6 +455,7 @@ export async function activate(context: vscode.ExtensionContext) {
               );
               sharedStatusBar.text = `$(sync~spin) 批量翻译 0/${totalBatches}`;
               sharedStatusBar.show();
+              let maxDone = 0; // 确保进度单调递增
               const concurrency = 3; // 可调并发
               // 计算每个文件的全局批次 offset
               let accOffset = 0;
@@ -464,7 +477,10 @@ export async function activate(context: vscode.ExtensionContext) {
                             reuseStatusBar: sharedStatusBar,
                             label: '批量翻译',
                             onUpdate: (done: number, total: number) => {
-                              sharedStatusBar.text = `$(sync~spin) 批量翻译 ${done}/${total}`;
+                              if (done > maxDone) {
+                                maxDone = done;
+                                sharedStatusBar.text = `$(sync~spin) 批量翻译 ${done}/${total}`;
+                              }
                             },
                           },
                           { batchSize: config.getTransBatchSize() }
