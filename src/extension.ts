@@ -182,14 +182,21 @@ export async function activate(context: vscode.ExtensionContext) {
             FileIO.getFolderFiles(folderPath)
               .then(async (files: any[]) => {
                 console.log('files', files);
-                files.forEach((file: any, i: number) => {
+                const validFiles = files.filter(
+                  (f: string) => !config.isScanIgnored(f)
+                );
+                if (files.length && !validFiles.length) {
+                  vscode.window.showInformationMessage(
+                    '所有文件已被 scanIgnoreGlobs 规则忽略'
+                  );
+                }
+                validFiles.forEach((file: any, i: number) => {
                   console.log('file', file);
                   const fileName = file;
                   const prefixKey = config.getPrefixKey(fileName, i.toString());
                   const pageEnName = config.generatePageEnName(fileName);
                   const tempFileName = config.getTempFileName();
                   const isNeedRandSuffix = config.getIsNeedRandSuffix();
-                  // removed unused params isSingleQuote & keyBoundaryChars in refactor
                   const isHookImport = config.getHookImport();
 
                   Utils.handleScanAndInit(
@@ -214,13 +221,13 @@ export async function activate(context: vscode.ExtensionContext) {
                                 newLangObj,
                                 pageEnName,
                                 async () => {
-                                  if (i === files.length - 1) {
+                                  if (i === validFiles.length - 1) {
                                     handleRefresh();
                                   }
                                 }
                               );
                             } else {
-                              if (i === files.length - 1) {
+                              if (i === validFiles.length - 1) {
                                 handleRefresh();
                               }
                             }

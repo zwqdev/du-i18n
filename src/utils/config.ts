@@ -44,6 +44,8 @@ export class Config {
   private gjPassword: string;
   public isLogin: boolean;
   private transBatchSize: number; // 翻译批次大小（可配置）
+  private scanIgnoreGlobs: string[]; // 批量扫描忽略的glob模式
+  private scanIgnoreRegexes: RegExp[]; // 预编译忽略规则
 
   constructor(props: any = {}) {
     // 默认将配置文件放在工作区的 .vscode 目录
@@ -88,6 +90,8 @@ export class Config {
     this.gjUserName = 'yz_admin'; // 用户名
     this.gjPassword = 'yz123456'; // 密码
     this.transBatchSize = 10; // 默认翻译批次大小
+    this.scanIgnoreGlobs = []; // 默认无忽略
+    this.scanIgnoreRegexes = [];
   }
   async readConfig() {
     // 优先直接读取工作区 .vscode/yz-i18n.config.json（绝对路径）
@@ -128,6 +132,7 @@ export class Config {
         keyBoundaryChars,
         hookImport,
         transBatchSize,
+        scanIgnoreGlobs,
         gjUserName = 'yz_admin',
         gjPassword = 'yz123456',
       } = config || {};
@@ -176,6 +181,12 @@ export class Config {
       if (typeof transBatchSize === 'number' && transBatchSize > 0) {
         this.transBatchSize = transBatchSize;
       }
+      if (Array.isArray(scanIgnoreGlobs)) {
+        this.scanIgnoreGlobs = scanIgnoreGlobs.filter(
+          (g) => typeof g === 'string'
+        );
+        this.compileScanIgnoreRegexes();
+      }
       // this.fileReg = fileReg || this.fileReg;
       this.gjUserName = gjUserName;
       this.gjPassword = gjPassword;
@@ -210,6 +221,59 @@ export class Config {
     return this.transBatchSize;
   }
 
+  getScanIgnoreGlobs() {
+    return this.scanIgnoreGlobs;
+  }
+
+  private globToRegex(glob: string): RegExp {
+    // 简单转换: 支持 **, *, ?
+    const esc = (s: string) => s.replace(/[.+^${}()|\[\]\\]/g, '\\$&');
+    let pattern = '';
+    let i = 0;
+    while (i < glob.length) {
+      const c = glob[i];
+      if (c === '*') {
+        if (glob[i + 1] === '*') {
+          pattern += '.*';
+          i += 2;
+        } else {
+          pattern += '[^/]*';
+          i += 1;
+        }
+      } else if (c === '?') {
+        pattern += '.';
+        i += 1;
+      } else {
+        pattern += esc(c);
+        i += 1;
+      }
+    }
+    return new RegExp('^' + pattern + '$');
+  }
+
+  private compileScanIgnoreRegexes() {
+    this.scanIgnoreRegexes = this.scanIgnoreGlobs.map((g) =>
+      this.globToRegex(g.trim())
+    );
+  }
+
+  isScanIgnored(filePath: string) {
+    if (!this.scanIgnoreRegexes.length) return false;
+    try {
+      const folders = vscode.workspace.workspaceFolders;
+      const root = folders && folders.length ? folders[0].uri.fsPath : '';
+      let rel =
+        root && filePath.startsWith(root)
+          ? filePath.substring(root.length)
+          : filePath;
+      rel = rel.replace(/\\/g, '/');
+      if (rel.startsWith('/')) rel = rel.substring(1);
+      return this.scanIgnoreRegexes.some((r) => r.test(rel));
+    } catch (e) {
+      return false;
+    }
+  }
+
   getInitConfig() {
     const initConfig = {
       // 引用key
@@ -240,6 +304,8 @@ export class Config {
       hookImport: this.hookImport,
       gjUserName: this.gjUserName,
       gjPassword: this.gjPassword,
+      // 批量扫描忽略文件 (glob)
+      scanIgnoreGlobs: this.scanIgnoreGlobs,
     };
     return initConfig;
   }
