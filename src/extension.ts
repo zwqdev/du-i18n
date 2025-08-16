@@ -1029,12 +1029,21 @@ export async function activate(context: vscode.ExtensionContext) {
             const tempPaths = config.getTempPaths();
             const tempLangs = config.getTempLangs();
             const langPaths = config.getLangPaths();
-            FileIO.generateMergeLangFile(
+            await FileIO.generateMergeLangFile(
               langPaths,
               tempPaths,
               tempLangs,
-              () => {
-                Message.showMessage(`合并成功`, MessageType.INFO);
+              (_targetPath: string, count: number, status: string) => {
+                if (status === 'SUCCESS') {
+                  Message.showMessage(
+                    `合并成功，更新 ${count} 个文件`,
+                    MessageType.INFO
+                  );
+                } else if (status === 'NO_CONTENT') {
+                  // 已在内部提示，无需重复
+                } else if (status === 'NO_TEMP_DIR') {
+                  // 已在内部提示
+                }
               }
             );
           }
