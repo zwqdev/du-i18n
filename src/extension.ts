@@ -282,69 +282,53 @@ export async function activate(context: vscode.ExtensionContext) {
               // 	action: "在线翻译-成功",
               // });
             };
-
-            if (config.isOnline()) {
-              const transSourceObj = config.getTransSourceObj();
-              if (isEmpty(transSourceObj)) {
-                await config.setTransSourceObj((data) => {
-                  handleTranslate(data);
-                });
-              } else {
-                handleTranslate(transSourceObj);
-              }
-              // // 记录用户行为数据
-              // reporter.sendTelemetryEvent("extension_du_i18n_multiScanAndGenerate", {
-              // 	action: "在线翻译-内部",
-              // });
-            } else {
-              const activeEditor = vscode.window.activeTextEditor;
-              if (activeEditor) {
-                const { fileName } = activeEditor.document || {};
-                const tempPaths = config.getTempPaths();
-                const tempPathName = tempPaths.replace(/\*/g, '');
-                // console.log('fileName', fileName, tempPathName);
-                if (
-                  fileName &&
-                  FileIO.isIncludePath(fileName, tempPathName) &&
-                  /\.(json)$/.test(fileName)
-                ) {
-                  if (!/\.(json)$/.test(fileName)) {
-                    return;
-                  }
-                  const data = fs.readFileSync(fileName, 'utf-8');
-                  if (!data) {
-                    return;
-                  }
-                  const localLangObj = eval(`(${data})`);
-
-                  const login = await Utils.getCookie(config.getAccount());
-
-                  if (login?.code !== '000000') {
-                    Message.showMessage(login?.msg || '登录失败');
-                    return;
-                  }
-                  // 调用百度翻译
-                  const { transSourceObj, message } =
-                    await Utils.getTransSourceObjByLlm(
-                      localLangObj,
-                      langKey,
-                      `test_gj_ticket=${login.data}`,
-                      {
-                        label: '单文件翻译',
-                      },
-                      { batchSize: config.getTransBatchSize() }
-                    );
-                  if (!isEmpty(transSourceObj)) {
-                    handleTranslate(transSourceObj, fileName);
-                  } else {
-                    Message.showMessage(message, MessageType.WARNING);
-                  }
-                } else {
-                  Message.showMessage(
-                    `单个文件调用在线翻译，请到目录${tempPaths}的翻译文件中调用该命令`,
-                    MessageType.WARNING
-                  );
+            const activeEditor = vscode.window.activeTextEditor;
+            if (activeEditor) {
+              const { fileName } = activeEditor.document || {};
+              const tempPaths = config.getTempPaths();
+              const tempPathName = tempPaths.replace(/\*/g, '');
+              // console.log('fileName', fileName, tempPathName);
+              if (
+                fileName &&
+                FileIO.isIncludePath(fileName, tempPathName) &&
+                /\.(json)$/.test(fileName)
+              ) {
+                if (!/\.(json)$/.test(fileName)) {
+                  return;
                 }
+                const data = fs.readFileSync(fileName, 'utf-8');
+                if (!data) {
+                  return;
+                }
+                const localLangObj = eval(`(${data})`);
+
+                const login = await Utils.getCookie(config.getAccount());
+
+                if (login?.code !== '000000') {
+                  Message.showMessage(login?.msg || '登录失败');
+                  return;
+                }
+                // 调用百度翻译
+                const { transSourceObj, message } =
+                  await Utils.getTransSourceObjByLlm(
+                    localLangObj,
+                    langKey,
+                    `test_gj_ticket=${login.data}`,
+                    {
+                      label: '单文件翻译',
+                    },
+                    { batchSize: config.getTransBatchSize() }
+                  );
+                if (!isEmpty(transSourceObj)) {
+                  handleTranslate(transSourceObj, fileName);
+                } else {
+                  Message.showMessage(message, MessageType.WARNING);
+                }
+              } else {
+                Message.showMessage(
+                  `单个文件调用在线翻译，请到目录${tempPaths}的翻译文件中调用该命令`,
+                  MessageType.WARNING
+                );
               }
             }
           } catch (e) {
