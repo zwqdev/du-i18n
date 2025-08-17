@@ -1,6 +1,6 @@
 import * as vscode from 'vscode';
 import MapCache from './cache';
-import { Baidu } from './baidu';
+import { YZ } from './yzApi';
 import { FileIO } from './fileIO';
 import { Message } from './message';
 import { loginByAccount } from './api';
@@ -9,7 +9,6 @@ const fs = require('fs');
 const YAML = require('yaml');
 const merge = require('lodash/merge');
 const isEmpty = require('lodash/isEmpty');
-const isObject = require('lodash/isObject');
 const chunk = require('lodash/chunk');
 import * as babelParser from '@babel/parser';
 import traverse from '@babel/traverse';
@@ -23,10 +22,7 @@ import { baseParse as vueBaseParse, NodeTypes } from '@vue/compiler-dom';
 const RegCache = new MapCache();
 // ...existing code...
 const chineseCharReg = /[\u4e00-\u9fa5]/;
-const chineseChar2Reg = /[\u4e00-\u9fa5]+|[\u4e00-\u9fa5]/g;
-const varReg = /\$\{(.[^\}]+)?\}/g; // 判断包含${}的正则
 let decorationType = null;
-const globalPkgPath = '**/package.json';
 const boundaryCodes = ['"', "'", '`']; // 字符串边界
 const SPLIT = '-----sss--';
 // 统一翻译批次大小默认值（可通过配置覆盖）
@@ -1939,7 +1935,7 @@ export class Utils {
               query: q.join(SPLIT),
               cookie,
             };
-            const { data } = await Baidu.getTranslate(params);
+            const { data } = await YZ.getTranslate(params);
             localDone++;
             if (!progress?.suppressBatchStatus) {
               updateBar();
