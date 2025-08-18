@@ -743,6 +743,30 @@ export class Utils {
         }
       }
     }
+    // --- Preserve trailing-comma style for array/object/list last elements ---
+    // If the original line ended with a trailing comma and the generated line does not,
+    // re-insert the comma (preserving any end-line comment position).
+    for (let i = 0; i < minLen; i++) {
+      const o = originalLines[i];
+      const n = newLines[i];
+      if (!o || !n) continue;
+      const ot = o.trim();
+      const nt = n.trim();
+      if (!ot || ot.startsWith("//")) continue;
+      const origHasComma = /,\s*(\/\/.*)?$/.test(ot);
+      const newHasComma = /,\s*(\/\/.*)?$/.test(nt);
+      if (origHasComma && !newHasComma) {
+        // Insert comma before end-line comment if present
+        const commentIdx = n.indexOf("//");
+        if (commentIdx !== -1) {
+          const beforeComment = n.slice(0, commentIdx).replace(/\s*$/, "");
+          const comment = n.slice(commentIdx);
+          newLines[i] = beforeComment + ", " + comment;
+        } else {
+          newLines[i] = n + ",";
+        }
+      }
+    }
     const finalCode = newLines.join("\n");
     return { code: finalCode, found, varObj };
   }
