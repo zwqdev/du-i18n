@@ -14,6 +14,7 @@ import * as babelParser from "@babel/parser";
 import traverse from "@babel/traverse";
 import * as t from "@babel/types";
 import generate from "@babel/generator";
+const MagicString = require("magic-string");
 import { parse as vueSfcParse } from "@vue/compiler-sfc/dist/compiler-sfc.esm-browser.js";
 import { baseParse as vueBaseParse, NodeTypes } from "@vue/compiler-dom";
 // removed unused: compilerDom
@@ -573,6 +574,8 @@ export class Utils {
       ast = babelParser.parse(scriptContent, {
         sourceType: "module",
         plugins,
+        ranges: true,
+        tokens: true,
       });
     } catch (e) {
       return { code: scriptContent, found: [], varObj: {} };
@@ -589,11 +592,12 @@ export class Utils {
       return `${prefixKey}${idx}`;
     };
 
+    const replacements: Array<{ start: number; end: number; text: string }> =
+      [];
     traverse(ast, {
       StringLiteral(path: any) {
         const val = path.node.value;
         if (!val || !Utils._containsChinese(val)) return;
-        // Skip strings that look like special identifiers (e.g., imported names like $$goPage)
         if (/^\$\$[A-Za-z0-9_]+$/.test(val)) return;
         if (isInsideConsoleCall(path) || isInsideDecorator(path)) return;
         if (
@@ -602,11 +606,15 @@ export class Utils {
         )
           return;
         const key = allocateKey(val);
-        path.replaceWith(
-          t.callExpression(Utils._buildCallee(scriptCalleeName), [
-            t.stringLiteral(key),
-          ])
-        );
+        // Replace by source range
+        if (path.node.start != null && path.node.end != null) {
+          const text = `${scriptCalleeName}('${key}')`;
+          replacements.push({
+            start: path.node.start,
+            end: path.node.end,
+            text,
+          });
+        }
       },
       TemplateLiteral(path: any) {
         const quasis = path.node.quasis;
@@ -631,34 +639,50 @@ export class Utils {
             varList.push(Utils._nodeCode(expressions[i]));
           }
         }
-        // 去掉可能残留的反引号
         let builtKey = parts.join("");
         if (builtKey.startsWith("`") && builtKey.endsWith("`")) {
           builtKey = builtKey.slice(1, -1);
         }
         varObj[originalCode] = { newKey: builtKey, varList };
         const key = allocateKey(originalCode);
-        const callArgs: any[] = [t.stringLiteral(key)];
-        if (expressions.length)
-          callArgs.push(t.arrayExpression(expressions as any));
-        path.replaceWith(
-          t.callExpression(Utils._buildCallee(scriptCalleeName), callArgs)
-        );
+        let text = `${scriptCalleeName}('${key}')`;
+        if (expressions.length) {
+          const exprCodes = expressions.map((e: any) => Utils._nodeCode(e));
+          text = `${scriptCalleeName}('${key}', [${exprCodes.join(", ")}])`;
+        }
+        if (path.node.start != null && path.node.end != null) {
+          replacements.push({
+            start: path.node.start,
+            end: path.node.end,
+            text,
+          });
+        }
       },
       JSXText(path: any) {
-        const val = path.node.value && path.node.value.trim();
+        const raw = path.node.value || "";
+        const val = raw && raw.trim();
         if (!val || !Utils._containsChinese(val)) return;
         if (/^\$\$[A-Za-z0-9_]+$/.test(val)) return;
         const key = allocateKey(val);
-        const call = t.callExpression(Utils._buildCallee(jsxCalleeName), [
-          t.stringLiteral(key),
-        ]);
-        path.replaceWith(t.jSXExpressionContainer(call));
+        const leading = raw.match(/^[ \t\n\r]*/)[0];
+        const trailing = raw.match(/[ \t\n\r]*$/)[0];
+        const text =
+          `${leading}{${jsxCalleeName}('${key}')} ${trailing}`.replace(
+            /\s+$/,
+            trailing
+          );
+        if (path.node.start != null && path.node.end != null) {
+          replacements.push({
+            start: path.node.start,
+            end: path.node.end,
+            text,
+          });
+        }
       },
       JSXAttribute(path: any) {
         const attr = path.node;
         if (!attr || !attr.value) return;
-        const processExpressions = (
+        const processExpressionsText = (
           originalCode: string,
           quasis: any[],
           expressions: any[],
@@ -678,23 +702,27 @@ export class Utils {
             builtAttrKey = builtAttrKey.slice(1, -1);
           }
           varObj[originalCode] = { newKey: builtAttrKey, varList };
-          const args: any[] = [t.stringLiteral(key)];
-          if (expressions.length)
-            args.push(t.arrayExpression(expressions as any));
-          return t.jSXExpressionContainer(
-            t.callExpression(Utils._buildCallee(jsxCalleeName), args)
-          );
+          let text = `${jsxCalleeName}('${key}')`;
+          if (expressions.length) {
+            const exprCodes = expressions.map((e: any) => Utils._nodeCode(e));
+            text = `${jsxCalleeName}('${key}', [${exprCodes.join(", ")}])`;
+          }
+          // JSX attribute container must be an expression container
+          return `{${text}}`;
         };
         if (
           t.isStringLiteral(attr.value) &&
           Utils._containsChinese(attr.value.value)
         ) {
           const key = allocateKey(attr.value.value);
-          attr.value = t.jSXExpressionContainer(
-            t.callExpression(Utils._buildCallee(jsxCalleeName), [
-              t.stringLiteral(key),
-            ])
-          );
+          const text = `{${jsxCalleeName}('${key}')}`;
+          if (attr.value.start != null && attr.value.end != null) {
+            replacements.push({
+              start: attr.value.start,
+              end: attr.value.end,
+              text,
+            });
+          }
         } else if (t.isJSXExpressionContainer(attr.value)) {
           const expr: any = attr.value.expression;
           if (t.isTemplateLiteral(expr)) {
@@ -706,69 +734,35 @@ export class Utils {
             if (!hasChinese) return;
             const originalCode = Utils._nodeCode(expr);
             const key = allocateKey(originalCode);
-            attr.value = processExpressions(
+            const text = processExpressionsText(
               originalCode,
               quasis,
               expressions,
               key
             );
+            if (attr.value.start != null && attr.value.end != null) {
+              replacements.push({
+                start: attr.value.start,
+                end: attr.value.end,
+                text,
+              });
+            }
           }
         }
       },
     });
 
-    const outScript = generate(
-      ast,
-      { retainLines: true, comments: true },
-      scriptContent
-    );
-
-    // --- Preserve semicolon style (don't add where source line had none) ---
-    const originalLines = scriptContent.split(/\r?\n/);
-    const newLines = outScript.code.split(/\r?\n/);
-    const minLen = Math.min(originalLines.length, newLines.length);
-    for (let i = 0; i < minLen; i++) {
-      const o = originalLines[i];
-      const n = newLines[i];
-      if (!o || !n) continue;
-      const ot = o.trim();
-      const nt = n.trim();
-      if (!ot || ot.startsWith("//")) continue; // skip empty & comment-only lines
-      // Detect if original had semicolon
-      const origHasSemi = /;\s*(\/\/.*)?$/.test(ot);
-      if (!origHasSemi) {
-        // If generator added trailing semicolon we drop it (keep possible comment)
-        if (/;\s*(\/\/.*)?$/.test(nt)) {
-          newLines[i] = n.replace(/;\s*(\/\/.*)?$/, (_m, c) => (c ? c : ""));
-        }
-      }
+    // Apply replacements using MagicString to preserve untouched whitespace
+    if (replacements.length) {
+      const ms = new MagicString(scriptContent);
+      // apply in reverse order to keep indexes valid
+      replacements
+        .sort((a, b) => b.start - a.start)
+        .forEach((r) => ms.overwrite(r.start, r.end, r.text));
+      const finalCode = ms.toString();
+      return { code: finalCode, found, varObj };
     }
-    // --- Preserve trailing-comma style for array/object/list last elements ---
-    // If the original line ended with a trailing comma and the generated line does not,
-    // re-insert the comma (preserving any end-line comment position).
-    for (let i = 0; i < minLen; i++) {
-      const o = originalLines[i];
-      const n = newLines[i];
-      if (!o || !n) continue;
-      const ot = o.trim();
-      const nt = n.trim();
-      if (!ot || ot.startsWith("//")) continue;
-      const origHasComma = /,\s*(\/\/.*)?$/.test(ot);
-      const newHasComma = /,\s*(\/\/.*)?$/.test(nt);
-      if (origHasComma && !newHasComma) {
-        // Insert comma before end-line comment if present
-        const commentIdx = n.indexOf("//");
-        if (commentIdx !== -1) {
-          const beforeComment = n.slice(0, commentIdx).replace(/\s*$/, "");
-          const comment = n.slice(commentIdx);
-          newLines[i] = beforeComment + ", " + comment;
-        } else {
-          newLines[i] = n + ",";
-        }
-      }
-    }
-    const finalCode = newLines.join("\n");
-    return { code: finalCode, found, varObj };
+    return { code: scriptContent, found, varObj };
   }
 
   private static _processVueSfc(
