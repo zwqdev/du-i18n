@@ -594,8 +594,23 @@ export class Utils {
 
     const replacements: Array<{ start: number; end: number; text: string }> =
       [];
+    const isObjectKey = (path: any) => {
+      if (!path || !path.parent) return false;
+      const p = path.parent;
+      // Object property or method with this node as the key
+      if (
+        (p.type === "ObjectProperty" ||
+          p.type === "ObjectMethod" ||
+          p.type === "ClassProperty") &&
+        p.key === path.node
+      ) {
+        return true;
+      }
+      return false;
+    };
     traverse(ast, {
       StringLiteral(path: any) {
+        if (isObjectKey(path)) return; // skip object literal keys
         const val = path.node.value;
         if (!val || !Utils._containsChinese(val)) return;
         if (/^\$\$[A-Za-z0-9_]+$/.test(val)) return;
@@ -617,6 +632,7 @@ export class Utils {
         }
       },
       TemplateLiteral(path: any) {
+        if (isObjectKey(path)) return; // skip object literal keys
         const quasis = path.node.quasis;
         const expressions = path.node.expressions;
         const hasChinese = quasis.some((q: any) =>
