@@ -556,6 +556,15 @@ export class Utils {
     }
   ): { code: string; found: string[]; varObj: any } {
     const { quoteKeys, prefixKey, forceTs } = opts;
+    // 收集需要忽略提取的行（含有 @i18n-ignore 标记的行，或紧随其后的下一行）
+    const ignoreLineSet = new Set<number>();
+    scriptContent.split(/\n/).forEach((line, idx) => {
+      if (line.includes('@i18n-ignore')) {
+        const lineNo = idx + 1; // 1-based
+        ignoreLineSet.add(lineNo);
+        ignoreLineSet.add(lineNo + 1); // 允许注释单独一行在目标代码上一行
+      }
+    });
     const plugins: any[] = [
       'classProperties',
       'dynamicImport',
@@ -610,6 +619,8 @@ export class Utils {
     };
     traverse(ast, {
       StringLiteral(path: any) {
+        const line = path.node.loc && path.node.loc.start.line;
+        if (line && ignoreLineSet.has(line)) return; // 被忽略行
         if (isObjectKey(path)) return; // skip object literal keys
         const val = path.node.value;
         if (!val || !Utils._containsChinese(val)) return;
@@ -632,6 +643,8 @@ export class Utils {
         }
       },
       TemplateLiteral(path: any) {
+        const line = path.node.loc && path.node.loc.start.line;
+        if (line && ignoreLineSet.has(line)) return;
         if (isObjectKey(path)) return; // skip object literal keys
         const quasis = path.node.quasis;
         const expressions = path.node.expressions;
@@ -678,6 +691,8 @@ export class Utils {
         const raw = path.node.value || '';
         const val = raw && raw.trim();
         if (!val || !Utils._containsChinese(val)) return;
+        const line = path.node.loc && path.node.loc.start.line;
+        if (line && ignoreLineSet.has(line)) return;
         if (/^\$\$[A-Za-z0-9_]+$/.test(val)) return;
         const key = allocateKey(val);
         const leading = raw.match(/^[ \t\n\r]*/)[0];
@@ -698,6 +713,8 @@ export class Utils {
       JSXAttribute(path: any) {
         const attr = path.node;
         if (!attr || !attr.value) return;
+        const line = attr.loc && attr.loc.start && attr.loc.start.line;
+        if (line && ignoreLineSet.has(line)) return;
         const processExpressionsText = (
           originalCode: string,
           quasis: any[],
