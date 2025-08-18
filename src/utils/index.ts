@@ -863,36 +863,86 @@ export class Utils {
         }
       }
 
-      const scriptBlocks: Array<{ content: string; forceTs: boolean }> = [];
+      // Collect script blocks with their search offsets so we can replace
+      // by position (not by content) to avoid accidental global/text replacements
+      // that may modify identifiers (eg. `$$goPage` -> `$goPage`).
+      const scriptBlocks: Array<{
+        content: string;
+        forceTs: boolean;
+        startSearchIndex: number;
+      }> = [];
       if (descriptor.script && descriptor.script.content) {
         scriptBlocks.push({
           content: descriptor.script.content,
           forceTs: descriptor.script.lang === "ts",
+          // start searching from the start of the script block region
+          startSearchIndex: descriptor.script.loc
+            ? descriptor.script.loc.start.offset
+            : 0,
         });
       }
       if (descriptor.scriptSetup && descriptor.scriptSetup.content) {
         scriptBlocks.push({
           content: descriptor.scriptSetup.content,
           forceTs: descriptor.scriptSetup.lang === "ts",
+          startSearchIndex: descriptor.scriptSetup.loc
+            ? descriptor.scriptSetup.loc.start.offset
+            : 0,
         });
       }
-      scriptBlocks.forEach(({ content: blockContent, forceTs }) => {
-        const {
-          code: newPart,
-          found,
-          varObj,
-        } = Utils._transformScriptContent(blockContent, filePath, {
-          quoteKeys: ctx.quoteKeys,
-          prefixKey: ctx.prefixKey,
-          jsx: filePath.endsWith(".tsx"),
-          forceTs,
-        });
-        if (found.length) {
-          finalCode = finalCode.replace(blockContent, newPart);
-          foundList.push(...found);
-          vueVarObj = { ...vueVarObj, ...varObj };
+
+      // Prepare positional replacements to apply after transforming all blocks
+      const replacements: Array<{ start: number; end: number; text: string }> =
+        [];
+      scriptBlocks.forEach(
+        ({ content: blockContent, forceTs, startSearchIndex }) => {
+          const {
+            code: newPart,
+            found,
+            varObj,
+          } = Utils._transformScriptContent(blockContent, filePath, {
+            quoteKeys: ctx.quoteKeys,
+            prefixKey: ctx.prefixKey,
+            jsx: filePath.endsWith(".tsx"),
+            forceTs,
+          });
+          if (found.length) {
+            // Find the blockContent occurrence starting from the block's start offset
+            const contentIndex = finalCode.indexOf(
+              blockContent,
+              startSearchIndex
+            );
+            if (contentIndex > -1) {
+              replacements.push({
+                start: contentIndex,
+                end: contentIndex + blockContent.length,
+                text: newPart,
+              });
+            } else {
+              // Fallback: if not found at expected region, try global replace as last resort
+              const idx = finalCode.indexOf(blockContent);
+              if (idx > -1) {
+                replacements.push({
+                  start: idx,
+                  end: idx + blockContent.length,
+                  text: newPart,
+                });
+              }
+            }
+            foundList.push(...found);
+            vueVarObj = { ...vueVarObj, ...varObj };
+          }
         }
-      });
+      );
+
+      // Apply replacements in reverse order (so offsets remain valid)
+      if (replacements.length) {
+        replacements.sort((a, b) => b.start - a.start);
+        replacements.forEach((r) => {
+          finalCode =
+            finalCode.slice(0, r.start) + r.text + finalCode.slice(r.end);
+        });
+      }
 
       if (!foundList.length) return null;
       if (ctx.hookImport)
