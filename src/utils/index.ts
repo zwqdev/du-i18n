@@ -1,21 +1,21 @@
-import * as vscode from 'vscode';
-import MapCache from './cache';
-import { YZ } from './yzApi';
-import { FileIO } from './fileIO';
-import { Message } from './message';
-import { loginByAccount } from './api';
-const path = require('path');
-const fs = require('fs');
-const YAML = require('yaml');
-const merge = require('lodash/merge');
-const isEmpty = require('lodash/isEmpty');
-const chunk = require('lodash/chunk');
-import * as babelParser from '@babel/parser';
-import traverse from '@babel/traverse';
-import * as t from '@babel/types';
-import generate from '@babel/generator';
-import { parse as vueSfcParse } from '@vue/compiler-sfc';
-import { baseParse as vueBaseParse, NodeTypes } from '@vue/compiler-dom';
+import * as vscode from "vscode";
+import MapCache from "./cache";
+import { YZ } from "./yzApi";
+import { FileIO } from "./fileIO";
+import { Message } from "./message";
+import { loginByAccount } from "./api";
+const path = require("path");
+const fs = require("fs");
+const YAML = require("yaml");
+const merge = require("lodash/merge");
+const isEmpty = require("lodash/isEmpty");
+const chunk = require("lodash/chunk");
+import * as babelParser from "@babel/parser";
+import traverse from "@babel/traverse";
+import * as t from "@babel/types";
+import generate from "@babel/generator";
+import { parse as vueSfcParse } from "@vue/compiler-sfc";
+import { baseParse as vueBaseParse, NodeTypes } from "@vue/compiler-dom";
 // removed unused: compilerDom
 
 // 频繁调用，缓存计算结果
@@ -23,8 +23,8 @@ const RegCache = new MapCache();
 // ...existing code...
 const chineseCharReg = /[\u4e00-\u9fa5]/;
 let decorationType = null;
-const boundaryCodes = ['"', "'", '`']; // 字符串边界
-const SPLIT = '-----sss--';
+const boundaryCodes = ['"', "'", "`"]; // 字符串边界
+const SPLIT = "---$$_$$---";
 // 统一翻译批次大小默认值（可通过配置覆盖）
 export const DEFAULT_TRANS_BATCH_SIZE = 10;
 
@@ -37,13 +37,13 @@ export class Utils {
    * @returns
    */
   static getObjectValue(obj: any, key: string) {
-    if (Object.prototype.toString.call(obj) === '[object Object]') {
+    if (Object.prototype.toString.call(obj) === "[object Object]") {
       if (Object(obj).hasOwnProperty(key)) {
         return obj[key];
       } else {
-        if (key.indexOf('.')) {
+        if (key.indexOf(".")) {
           return key
-            .split('.')
+            .split(".")
             .reduce(
               (pre, k) => (Object(pre).hasOwnProperty(k) ? pre[k] : undefined),
               obj
@@ -56,7 +56,7 @@ export class Utils {
 
   static getStringValue(val: any) {
     if (
-      Object.prototype.toString.call(val) === '[object Object]' ||
+      Object.prototype.toString.call(val) === "[object Object]" ||
       Array.isArray(val)
     ) {
       return JSON.stringify(val);
@@ -66,19 +66,19 @@ export class Utils {
 
   static getRegExpStr(str: string) {
     if (str) {
-      return str.replace(/([\.\(\)\$\*\+\[\?\]\{\}\|\^\\])/g, '\\$1');
+      return str.replace(/([\.\(\)\$\*\+\[\?\]\{\}\|\^\\])/g, "\\$1");
     }
-    return '';
+    return "";
   }
 
   static getRegExp(str: string) {
     if (!RegCache.get(str)) {
       let completionKeyStr = Utils.getRegExpStr(str);
       completionKeyStr = completionKeyStr
-        .split(',')
+        .split(",")
         .map((c) => c.trim())
         .filter(Boolean)
-        .join('|');
+        .join("|");
       const reg = new RegExp(`([\\s{'"]+)(${completionKeyStr})([\\('"])?`);
       RegCache.set(str, reg);
     }
@@ -88,7 +88,7 @@ export class Utils {
   static getStringText(val: any) {
     if (
       Array.isArray(val) ||
-      Object.prototype.toString.call(val) === '[object Object]'
+      Object.prototype.toString.call(val) === "[object Object]"
     ) {
       return JSON.stringify(val);
     }
@@ -107,20 +107,20 @@ export class Utils {
   static handleScanFileInner(data: string, filePath: string) {
     try {
       // 公司内部自定义的格式
-      if (data && data.indexOf('</i18n>') > -1) {
+      if (data && data.indexOf("</i18n>") > -1) {
         const i18nSrcReg = /<i18n\ssrc=+(([\s\S])*?)>(.*\s)?<\/i18n>/g;
-        let yamlStr = '';
+        let yamlStr = "";
         let yamlObjList = [];
         let yamlObj = null;
-        let urlPath = '';
+        let urlPath = "";
         let langFilePath = {};
         let count = 0;
         let res = null;
         let startIndex = -1;
         let endIndex = 0;
-        while ((startIndex = data.indexOf('<i18n>', endIndex)) > -1) {
+        while ((startIndex = data.indexOf("<i18n>", endIndex)) > -1) {
           // 可能存在多个的情况
-          endIndex = data.indexOf('</i18n>', startIndex);
+          endIndex = data.indexOf("</i18n>", startIndex);
           yamlStr = data.substring(startIndex + 6, endIndex);
           urlPath = filePath;
           yamlObjList.push(YAML.parse(yamlStr));
@@ -133,7 +133,7 @@ export class Utils {
             langFilePath = {};
           } else {
             // 所有语言在多个文件
-            urlPath = '';
+            urlPath = "";
           }
         }
 
@@ -144,11 +144,11 @@ export class Utils {
         // ...existing code...
         // 设置默认key
         const keys = Object.keys(yamlObj || {});
-        let defaultKey = 'en'; // 默认值
+        let defaultKey = "en"; // 默认值
         if (Array.isArray(keys)) {
-          if (keys.includes['zh-TW']) {
+          if (keys.includes["zh-TW"]) {
             // 特殊设置
-            defaultKey = 'zh-TW';
+            defaultKey = "zh-TW";
           } else {
             defaultKey = keys[0];
           }
@@ -159,11 +159,11 @@ export class Utils {
           defaultKey,
           filePath: urlPath,
           langFilePath,
-          type: 'yaml',
+          type: "yaml",
         };
       }
     } catch (e) {
-      console.error('handleScanFileInner error', e);
+      console.error("handleScanFileInner error", e);
     }
     return null;
   }
@@ -175,7 +175,7 @@ export class Utils {
   ) {
     if (editor && positionObj) {
       const foregroundColor = new vscode.ThemeColor(
-        'editorCodeLens.foreground'
+        "editorCodeLens.foreground"
       );
 
       // 坑：一定要先清空，否则会出现重复的情况，即使将全局变量decorationType改成局部变量也无效
@@ -187,14 +187,14 @@ export class Utils {
       decorationType = vscode.window.createTextEditorDecorationType({
         isWholeLine: true,
         rangeBehavior: vscode.DecorationRangeBehavior.ClosedClosed,
-        overviewRulerColor: 'grey',
+        overviewRulerColor: "grey",
         overviewRulerLane: vscode.OverviewRulerLane.Left,
       });
 
       const decorationOptions: any = [];
       // ...existing code...
       Object.entries(positionObj).forEach(([k, v]: any) => {
-        const p: any = k.split('-');
+        const p: any = k.split("-");
         if (p && p.length === 2) {
           const startPosition = editor.document.positionAt(p[0]);
           const endPosition = editor.document.positionAt(p[1]);
@@ -207,7 +207,7 @@ export class Utils {
               after: {
                 contentText: ` ${text}`,
                 color: foregroundColor,
-                opacity: '0.6',
+                opacity: "0.6",
               },
             },
           };
@@ -221,8 +221,8 @@ export class Utils {
   // 打开配置
   static openConfigCommand() {
     vscode.commands.executeCommand(
-      'workbench.action.openSettings',
-      '国际多语言配置'
+      "workbench.action.openSettings",
+      "国际多语言配置"
     ); // 用户区
   }
 
@@ -230,7 +230,7 @@ export class Utils {
   static async handleAnalystics(
     selectFolderPath: any,
     bigFileLineCount: number,
-    base: string = 'src'
+    base: string = "src"
   ) {
     return new Promise(async (resolve, reject) => {
       try {
@@ -250,7 +250,7 @@ export class Utils {
               .slice(folderPaths.indexOf(base))
               .join(path.sep);
           }
-          folderUrl = '**' + path.sep + folderUrl + path.sep + '**';
+          folderUrl = "**" + path.sep + folderUrl + path.sep + "**";
           const files = await FileIO.getFiles(folderUrl);
           // ...existing code...
           let bigFileList = [],
@@ -265,10 +265,10 @@ export class Utils {
             bigFileList.push({ path: filePath, count });
           };
           files.forEach(({ fsPath }) => {
-            const indexFile = 'index';
+            const indexFile = "index";
             const fileName = path.basename(fsPath);
-            const fileType = '.' + fileName.split('.')[1];
-            const data = fs.readFileSync(fsPath, 'utf-8');
+            const fileType = "." + fileName.split(".")[1];
+            const data = fs.readFileSync(fsPath, "utf-8");
             const arr = (data && data.match(/\n/g)) || [];
             if (arr.length >= bigFileLineCount) {
               addPath(fsPath, arr.length);
@@ -290,7 +290,7 @@ export class Utils {
           resolve({ bigFileList, fileTypeObj, indexFileObj });
         }
       } catch (e) {
-        console.error('handleAnalystics e', e);
+        console.error("handleAnalystics e", e);
         reject(e);
       }
     });
@@ -302,9 +302,9 @@ export class Utils {
     const globalLangObj = {};
     const newLangObj = {};
     const getObj = (fPath) => {
-      const data = fs.readFileSync(fPath, 'utf-8');
-      const startIndex = data.indexOf('{');
-      const endIndex = data.lastIndexOf('}');
+      const data = fs.readFileSync(fPath, "utf-8");
+      const startIndex = data.indexOf("{");
+      const endIndex = data.lastIndexOf("}");
       if (startIndex < 0 || endIndex < 0) {
         return {};
       }
@@ -312,11 +312,11 @@ export class Utils {
       const langObj = eval(`(${dataStr})`);
       return langObj;
     };
-    const sourcePath = '**/src/i18n/locale/**';
+    const sourcePath = "**/src/i18n/locale/**";
     const files = await FileIO.getFiles(sourcePath);
     files.forEach(({ fsPath }) => {
       const fileName = path.basename(fsPath);
-      const lang = fileName.split('.')[0];
+      const lang = fileName.split(".")[0];
       if (/\.(js)$/.test(fileName)) {
         try {
           globalLangObj[lang] = getObj(fsPath);
@@ -331,8 +331,8 @@ export class Utils {
         Object.entries(obj).forEach(([k, v]) => {
           if (
             !k.startsWith(prefix) &&
-            globalLangObj['zh'] &&
-            globalLangObj['zh'][k]
+            globalLangObj["zh"] &&
+            globalLangObj["zh"][k]
           ) {
             langMap[k] = v;
           }
@@ -340,7 +340,7 @@ export class Utils {
         newLangObj[lang] = langMap;
       });
     }
-    const fileName = '/未上传的文案集合.md';
+    const fileName = "/未上传的文案集合.md";
     // const newFilePath = getBaseFilePath(filePath, fileName);
     // ...existing code...
     const newFilePath = await FileIO.writeContentToLocalFile(
@@ -354,13 +354,13 @@ export class Utils {
   // 生成临时文件
   static getRandFileName(pageEnName: string, fileType: string) {
     const date = new Date();
-    let rand = '';
+    let rand = "";
     rand += date.getFullYear();
-    rand += '-';
+    rand += "-";
     rand += date.getMonth() + 1;
-    rand += '-';
+    rand += "-";
     rand += date.getDate();
-    rand += '-';
+    rand += "-";
     rand += date.getTime().toString().substr(-6);
     return `${pageEnName}_${rand}${fileType}`;
   }
@@ -385,7 +385,7 @@ export class Utils {
         langObj[defaultLang][key] =
           (varObj && varObj[char] && varObj[char].newKey) || char;
         (initLang || []).forEach((lang) => {
-          langObj[lang][key] = '';
+          langObj[lang][key] = "";
         });
       });
     }
@@ -420,10 +420,10 @@ export class Utils {
           if (newLangObj) cb(newLangObj);
         })
         .catch((e: any) => {
-          console.error('astProcessFile error', e);
+          console.error("astProcessFile error", e);
         });
     } catch (e) {
-      console.error('handleScanAndInit e', e);
+      console.error("handleScanAndInit e", e);
     }
   }
 
@@ -437,7 +437,7 @@ export class Utils {
     hookImport: string
   ) {
     try {
-      const code = fs.readFileSync(filePath, 'utf-8');
+      const code = fs.readFileSync(filePath, "utf-8");
 
       // Vue 单文件组件处理
       if (/\.vue$/.test(filePath)) {
@@ -490,7 +490,7 @@ export class Utils {
           const callee = p.node.callee;
           if (
             t.isMemberExpression(callee) &&
-            t.isIdentifier(callee.object, { name: 'console' })
+            t.isIdentifier(callee.object, { name: "console" })
           )
             return true;
         }
@@ -501,7 +501,7 @@ export class Utils {
     const isInsideDecorator = (path: any) => {
       let p = path.parentPath;
       while (p) {
-        if (p.node && p.node.type === 'Decorator') return true;
+        if (p.node && p.node.type === "Decorator") return true;
         p = p.parentPath;
       }
       return false;
@@ -510,9 +510,9 @@ export class Utils {
   }
 
   private static _buildCallee(name: string) {
-    if (!name) return t.identifier('$t');
-    if (name.indexOf('.') > -1) {
-      const parts = name.split('.');
+    if (!name) return t.identifier("$t");
+    if (name.indexOf(".") > -1) {
+      const parts = name.split(".");
       let e: any = t.identifier(parts[0]);
       for (let i = 1; i < parts.length; i++) {
         e = t.memberExpression(e, t.identifier(parts[i]));
@@ -526,7 +526,7 @@ export class Utils {
     try {
       return generate(node).code;
     } catch (e) {
-      return '';
+      return "";
     }
   }
 
@@ -556,22 +556,22 @@ export class Utils {
   ): { code: string; found: string[]; varObj: any } {
     const { quoteKeys, prefixKey, forceTs } = opts;
     const plugins: any[] = [
-      'classProperties',
-      'dynamicImport',
-      'optionalChaining',
+      "classProperties",
+      "dynamicImport",
+      "optionalChaining",
     ];
     const isTs =
       !!forceTs ||
       /\.(ts|tsx)$/.test(filePath) ||
       /lang=\"ts\"/.test(scriptContent);
-    if (isTs) plugins.push('typescript');
-    if (opts.jsx || filePath.endsWith('.tsx')) plugins.push('jsx');
-    if (/@[A-Za-z_]/.test(scriptContent)) plugins.push('decorators-legacy');
+    if (isTs) plugins.push("typescript");
+    if (opts.jsx || filePath.endsWith(".tsx")) plugins.push("jsx");
+    if (/@[A-Za-z_]/.test(scriptContent)) plugins.push("decorators-legacy");
 
     let ast: any;
     try {
       ast = babelParser.parse(scriptContent, {
-        sourceType: 'module',
+        sourceType: "module",
         plugins,
       });
     } catch (e) {
@@ -581,8 +581,8 @@ export class Utils {
     const { isInsideConsoleCall, isInsideDecorator } = Utils._createGuards();
     const found: string[] = [];
     const varObj: Record<string, { newKey: string; varList: string[] }> = {};
-    const scriptCalleeName = quoteKeys[1] || 'i18n.t';
-    const jsxCalleeName = quoteKeys[0] || '$t';
+    const scriptCalleeName = quoteKeys[1] || "i18n.t";
+    const jsxCalleeName = quoteKeys[0] || "$t";
     const allocateKey = (original: string) => {
       const idx = found.length;
       found.push(original);
@@ -623,15 +623,15 @@ export class Utils {
         const parts: string[] = [];
         const varList: string[] = [];
         for (let i = 0; i < quasis.length; i++) {
-          parts.push(quasis[i].value.cooked || '');
+          parts.push(quasis[i].value.cooked || "");
           if (i < expressions.length) {
             parts.push(`{${varList.length}}`);
             varList.push(Utils._nodeCode(expressions[i]));
           }
         }
         // 去掉可能残留的反引号
-        let builtKey = parts.join('');
-        if (builtKey.startsWith('`') && builtKey.endsWith('`')) {
+        let builtKey = parts.join("");
+        if (builtKey.startsWith("`") && builtKey.endsWith("`")) {
           builtKey = builtKey.slice(1, -1);
         }
         varObj[originalCode] = { newKey: builtKey, varList };
@@ -664,14 +664,14 @@ export class Utils {
           const parts: string[] = [];
           const varList: string[] = [];
           for (let i = 0; i < quasis.length; i++) {
-            parts.push(quasis[i].value.cooked || '');
+            parts.push(quasis[i].value.cooked || "");
             if (i < expressions.length) {
               parts.push(`{${varList.length}}`);
               varList.push(Utils._nodeCode(expressions[i]));
             }
           }
-          let builtAttrKey = parts.join('');
-          if (builtAttrKey.startsWith('`') && builtAttrKey.endsWith('`')) {
+          let builtAttrKey = parts.join("");
+          if (builtAttrKey.startsWith("`") && builtAttrKey.endsWith("`")) {
             builtAttrKey = builtAttrKey.slice(1, -1);
           }
           varObj[originalCode] = { newKey: builtAttrKey, varList };
@@ -838,13 +838,13 @@ export class Utils {
       if (descriptor.script && descriptor.script.content) {
         scriptBlocks.push({
           content: descriptor.script.content,
-          forceTs: descriptor.script.lang === 'ts',
+          forceTs: descriptor.script.lang === "ts",
         });
       }
       if (descriptor.scriptSetup && descriptor.scriptSetup.content) {
         scriptBlocks.push({
           content: descriptor.scriptSetup.content,
-          forceTs: descriptor.scriptSetup.lang === 'ts',
+          forceTs: descriptor.scriptSetup.lang === "ts",
         });
       }
       scriptBlocks.forEach(({ content: blockContent, forceTs }) => {
@@ -855,7 +855,7 @@ export class Utils {
         } = Utils._transformScriptContent(blockContent, filePath, {
           quoteKeys: ctx.quoteKeys,
           prefixKey: ctx.prefixKey,
-          jsx: filePath.endsWith('.tsx'),
+          jsx: filePath.endsWith(".tsx"),
           forceTs,
         });
         if (found.length) {
@@ -898,7 +898,7 @@ export class Utils {
       const isEscaped = (idx: number) => {
         let b = idx - 1,
           c = 0;
-        while (b >= 0 && str[b] === '\\') {
+        while (b >= 0 && str[b] === "\\") {
           c++;
           b--;
         }
@@ -906,7 +906,7 @@ export class Utils {
       };
 
       while (i < len) {
-        if (str[i] === '$' && str[i + 1] === '{' && !isEscaped(i)) {
+        if (str[i] === "$" && str[i + 1] === "{" && !isEscaped(i)) {
           // Push preceding literal (trim trailing spaces if previous visible char is Chinese)
           if (i > lastLiteralStart) {
             let literal = str.slice(lastLiteralStart, i);
@@ -927,14 +927,14 @@ export class Utils {
             const ch = str[j];
             if (quote) {
               // Inside a quoted string within the placeholder expression
-              if (quote === '`') {
+              if (quote === "`") {
                 // Handle nested ${ } inside template literal
-                if (ch === '$' && str[j + 1] === '{' && !isEscaped(j)) {
+                if (ch === "$" && str[j + 1] === "{" && !isEscaped(j)) {
                   depth++; // entering nested placeholder
                   j += 2; // skip ${
                   continue;
                 }
-                if (ch === '}' && depth > 1 && !isEscaped(j)) {
+                if (ch === "}" && depth > 1 && !isEscaped(j)) {
                   depth--; // closing nested placeholder
                   j++;
                   continue;
@@ -949,17 +949,17 @@ export class Utils {
               continue;
             }
             // Not currently inside a quoted string
-            if ((ch === '"' || ch === "'" || ch === '`') && !isEscaped(j)) {
+            if ((ch === '"' || ch === "'" || ch === "`") && !isEscaped(j)) {
               quote = ch;
               j++;
               continue;
             }
-            if (ch === '{') {
+            if (ch === "{") {
               depth++;
               j++;
               continue;
             }
-            if (ch === '}') {
+            if (ch === "}") {
               depth--;
               if (depth === 0) {
                 const expr = str.slice(i + 2, j).trim();
@@ -986,16 +986,16 @@ export class Utils {
         i++;
       }
       if (lastLiteralStart < len) parts.push(str.slice(lastLiteralStart));
-      return { newKey: parts.join(''), varList };
+      return { newKey: parts.join(""), varList };
     };
 
     keys.forEach((original) => {
-      if (typeof original !== 'string') return;
-      if (original.indexOf('${') === -1) return;
-      const normalized = original.replace(/\\(\$\{)/g, '$1');
+      if (typeof original !== "string") return;
+      if (original.indexOf("${") === -1) return;
+      const normalized = original.replace(/\\(\$\{)/g, "$1");
       const { newKey, varList } = parseTopLevelTemplate(normalized);
       const cleanedKey =
-        newKey.startsWith('`') && newKey.endsWith('`')
+        newKey.startsWith("`") && newKey.endsWith("`")
           ? newKey.slice(1, -1)
           : newKey;
       // 不再保留原始模板两侧反引号，统一使用纯文本 key 形式
@@ -1033,14 +1033,14 @@ export class Utils {
    */
   static getI18NObject(data: string) {
     let yamlObj = null;
-    if (data && data.indexOf('</i18n>') > -1) {
-      let yamlStr = '';
+    if (data && data.indexOf("</i18n>") > -1) {
+      let yamlStr = "";
       let yamlObjList = [];
       let startIndex = -1;
       let endIndex = 0;
-      while ((startIndex = data.indexOf('<i18n>', endIndex)) > -1) {
+      while ((startIndex = data.indexOf("<i18n>", endIndex)) > -1) {
         // 可能存在多个的情况
-        endIndex = data.indexOf('</i18n>', startIndex);
+        endIndex = data.indexOf("</i18n>", startIndex);
         yamlStr = data.substring(startIndex + 6, endIndex);
         yamlObjList.push(YAML.parse(yamlStr));
       }
@@ -1095,8 +1095,8 @@ export class Utils {
     const chineseChar = /[\u4e00-\u9fa5]/; // (Can be extended if needed)
     const chineseOrPunct =
       /[\u4e00-\u9fa5\u3000-\u303F\uFF00-\uFFEF，。！？；：“”‘’、《》…·]/;
-    const replaceKeys: Array<[RegExp, string]> = [[/&nbsp;/g, '']];
-    const excludes = ['v-track:']; // substrings to skip
+    const replaceKeys: Array<[RegExp, string]> = [[/&nbsp;/g, ""]];
+    const excludes = ["v-track:"]; // substrings to skip
 
     // States
     const STATE = {
@@ -1145,7 +1145,7 @@ export class Utils {
       // count preceding backslashes
       let cnt = 0;
       let i = idx - 1;
-      while (i >= 0 && data[i] === '\\') {
+      while (i >= 0 && data[i] === "\\") {
         cnt++;
         i--;
       }
@@ -1165,7 +1165,7 @@ export class Utils {
           continue;
         }
         // Allow simple spaces within Chinese block
-        if (ch === ' ' || ch === '\t') {
+        if (ch === " " || ch === "\t") {
           // peek next; if next is Chinese keep, else break
           if (j + 1 < data.length && chineseOrPunct.test(data[j + 1])) {
             j++;
@@ -1204,22 +1204,22 @@ export class Utils {
 
       switch (state) {
         case STATE.DEFAULT: {
-          if (next7 === '<i18n>') {
+          if (next7 === "<i18n>") {
             state = STATE.I18N_BLOCK;
             i += 6; // skip tag
             continue;
           }
-          if (next4 === '<!--') {
+          if (next4 === "<!--") {
             state = STATE.HTML_COMMENT;
             i += 3;
             continue;
           }
-          if (next2 === '//') {
+          if (next2 === "//") {
             state = STATE.LINE_COMMENT;
             i += 1;
             continue;
           }
-          if (next2 === '/*') {
+          if (next2 === "/*") {
             state = STATE.BLOCK_COMMENT;
             i += 1;
             continue;
@@ -1235,14 +1235,14 @@ export class Utils {
             currentStart = i + 1;
             continue;
           }
-          if (ch === '`') {
+          if (ch === "`") {
             returnState = STATE.DEFAULT;
             state = STATE.TEMPLATE;
             currentStart = i + 1;
             templateBraceDepth = 0;
             continue;
           }
-          if (ch === '<') {
+          if (ch === "<") {
             // Start of a tag? If next char is letter or / we assume tag
             const nc = data[i + 1];
             if (nc && /[A-Za-z!/]/.test(nc)) {
@@ -1250,7 +1250,7 @@ export class Utils {
             }
             continue;
           }
-          if (ch === '/') {
+          if (ch === "/") {
             // potential regex literal; basic heuristic: preceding non-identifier & next not / or *
             const prev = data[i - 1];
             const ahead = data[i + 1];
@@ -1258,17 +1258,17 @@ export class Utils {
             // 更严格的正则表达式检测：只有在特定上下文中才认为是正则表达式
             // 例如：= /pattern/, ( /pattern/, [ /pattern/, , /pattern/, return /pattern/, { /pattern/
             const regexContexts = [
-              '=',
-              '(',
-              '[',
-              ',',
-              'return',
-              '{',
-              ':',
-              ';',
-              '!',
-              '&',
-              '|',
+              "=",
+              "(",
+              "[",
+              ",",
+              "return",
+              "{",
+              ":",
+              ";",
+              "!",
+              "&",
+              "|",
             ];
             let isRegexContext = false;
 
@@ -1283,8 +1283,8 @@ export class Utils {
 
             if (
               ahead &&
-              ahead !== '/' &&
-              ahead !== '*' &&
+              ahead !== "/" &&
+              ahead !== "*" &&
               isRegexContext // 只在明确的正则表达式上下文中才进入REGEXP状态
             ) {
               // ...existing code...
@@ -1319,16 +1319,16 @@ export class Utils {
           break;
         }
         case STATE.TEMPLATE: {
-          if (ch === '$' && data[i + 1] === '{') {
+          if (ch === "$" && data[i + 1] === "{") {
             templateBraceDepth++;
             i++; // skip {
             continue;
           }
-          if (ch === '}') {
+          if (ch === "}") {
             if (templateBraceDepth > 0) templateBraceDepth--;
             continue;
           }
-          if (ch === '`' && !isEscaped(i) && templateBraceDepth === 0) {
+          if (ch === "`" && !isEscaped(i) && templateBraceDepth === 0) {
             commitLiteral(i);
             state = returnState;
             currentStart = -1;
@@ -1336,34 +1336,34 @@ export class Utils {
           break;
         }
         case STATE.LINE_COMMENT: {
-          if (ch === '\n') {
+          if (ch === "\n") {
             state = STATE.DEFAULT;
           }
           break;
         }
         case STATE.BLOCK_COMMENT: {
-          if (next2 === '*/') {
+          if (next2 === "*/") {
             state = STATE.DEFAULT;
             i += 1;
           }
           break;
         }
         case STATE.HTML_COMMENT: {
-          if (next3 === '-->') {
+          if (next3 === "-->") {
             state = STATE.DEFAULT;
             i += 2;
           }
           break;
         }
         case STATE.I18N_BLOCK: {
-          if (data.slice(i, i + 8).toLowerCase() === '</i18n>') {
+          if (data.slice(i, i + 8).toLowerCase() === "</i18n>") {
             state = STATE.DEFAULT;
             i += 7;
           }
           break;
         }
         case STATE.REGEXP: {
-          if (ch === '/' && !isEscaped(i)) {
+          if (ch === "/" && !isEscaped(i)) {
             // ...existing code...
             state = STATE.DEFAULT;
           }
@@ -1387,13 +1387,13 @@ export class Utils {
               }
             }
             i = j; // jump to end quote
-          } else if (ch === '`') {
+          } else if (ch === "`") {
             // attribute template literal (e.g. title={`视频 ${n}`} )
             returnState = STATE.JSX_TAG;
             state = STATE.TEMPLATE;
             currentStart = i + 1;
             templateBraceDepth = 0;
-          } else if (ch === '>') {
+          } else if (ch === ">") {
             state = STATE.DEFAULT;
           }
           break;
@@ -1427,13 +1427,13 @@ export class Utils {
     }
 
     // 准备插入内容：去掉开头多余换行并保证以单个换行结尾，避免粘连或多余空行
-    let importText = hookImport.replace(/^\n+/, '');
-    importText = importText.endsWith('\n') ? importText : importText + '\n';
+    let importText = hookImport.replace(/^\n+/, "");
+    importText = importText.endsWith("\n") ? importText : importText + "\n";
 
     // 没有任何 import 的文件：考虑 shebang（#!）情况
     if (imports.length === 0) {
-      if (content.startsWith('#!')) {
-        const firstNewline = content.indexOf('\n');
+      if (content.startsWith("#!")) {
+        const firstNewline = content.indexOf("\n");
         if (firstNewline !== -1) {
           return (
             content.slice(0, firstNewline + 1) +
@@ -1451,8 +1451,8 @@ export class Utils {
     const prefix = content.slice(0, lastIndexRaw);
     let suffix = content.slice(lastIndexRaw);
     // 保证 prefix 以单个换行结束，去掉 suffix 开头的多余换行
-    const prefixNorm = prefix.replace(/\n+$/, '\n');
-    const suffixNorm = suffix.replace(/^\n+/, '');
+    const prefixNorm = prefix.replace(/\n+$/, "\n");
+    const suffixNorm = suffix.replace(/^\n+/, "");
     return prefixNorm + importText + suffixNorm;
   }
   /**
@@ -1497,12 +1497,12 @@ export class Utils {
       };
 
       const getTemplateStr = (keys: any[]) => {
-        if (data.indexOf('<template>') < 0) {
-          return '';
+        if (data.indexOf("<template>") < 0) {
+          return "";
         }
         const templateStartIndex =
-          data.indexOf('<template>') + '<template>'.length;
-        const templateEndIndex = data.lastIndexOf('</template>');
+          data.indexOf("<template>") + "<template>".length;
+        const templateEndIndex = data.lastIndexOf("</template>");
         // ...existing code...
         let text = data.substring(templateStartIndex, templateEndIndex);
         // ...existing code...
@@ -1518,7 +1518,7 @@ export class Utils {
             // ...existing code...
             endIndex = startIndex + char.length;
             let preIndex = startIndex - 2,
-              str = '',
+              str = "",
               pre = text[startIndex - 1],
               suff = text[endIndex];
             // console.log("text[endIndex]", pre, suff)
@@ -1527,11 +1527,11 @@ export class Utils {
               continue;
             }
 
-            if (preIndex >= 0 && text[preIndex] === '=') {
-              while (text[preIndex] !== ' ') {
+            if (preIndex >= 0 && text[preIndex] === "=") {
+              while (text[preIndex] !== " ") {
                 if (
-                  text[preIndex] === '\n' ||
-                  text[preIndex] === ' ' ||
+                  text[preIndex] === "\n" ||
+                  text[preIndex] === " " ||
                   preIndex < 0
                 ) {
                   break;
@@ -1539,7 +1539,7 @@ export class Utils {
                 preIndex--;
               }
               preIndex = preIndex + 1;
-              str = ':' + text.substring(preIndex, endIndex);
+              str = ":" + text.substring(preIndex, endIndex);
               str = str.replace(char, i18nT);
               text = text.slice(0, preIndex) + str + text.slice(endIndex);
             } else if (boundaryCodes.includes(suff) && pre === suff) {
@@ -1558,7 +1558,7 @@ export class Utils {
 
       const getScriptStr = (keys: any[]) => {
         const scriptStartIndex = getScriptType(data);
-        const scriptEndIndex = data.lastIndexOf('</script>');
+        const scriptEndIndex = data.lastIndexOf("</script>");
         // console.log("scriptStartIndex", scriptStartIndex, scriptEndIndex)
         let text = data.substring(scriptStartIndex, scriptEndIndex);
         // console.log("script", text);
@@ -1567,7 +1567,7 @@ export class Utils {
           const replaceKey = quoteKeys[1];
           const i18nT = getI18nT(replaceKey, key, char);
           let completionKeyStr = Utils.getRegExpStr(char);
-          const reg = new RegExp(`[\`'"](${completionKeyStr})[\`'"]`, 'g');
+          const reg = new RegExp(`[\`'"](${completionKeyStr})[\`'"]`, "g");
           // const reg = new RegExp(`['"\`](${char})['"\`]`, "g");
           text = text.replace(reg, `${i18nT}`);
         });
@@ -1579,8 +1579,8 @@ export class Utils {
         const templateStr = getTemplateStr(chars);
         if (templateStr) {
           const templateStartIndex =
-            newData.indexOf('<template>') + '<template>'.length;
-          const templateEndIndex = newData.lastIndexOf('</template>');
+            newData.indexOf("<template>") + "<template>".length;
+          const templateEndIndex = newData.lastIndexOf("</template>");
           newData =
             newData.slice(0, templateStartIndex) +
             templateStr +
@@ -1592,7 +1592,7 @@ export class Utils {
         // 将原文件替换$t('key')形式
         const scriptStr = getScriptStr(chars);
         const scriptStartIndex = getScriptType(newData);
-        const scriptEndIndex = newData.lastIndexOf('</script>');
+        const scriptEndIndex = newData.lastIndexOf("</script>");
         newData =
           newData.slice(0, scriptStartIndex) +
           scriptStr +
@@ -1650,7 +1650,7 @@ export class Utils {
           const key = `${keyPrefix}${i}`;
           const i18nT = getI18nT(replaceKey, key, char);
           let completionKeyStr = Utils.getRegExpStr(char);
-          const reg = new RegExp(`[\`'"](${completionKeyStr})[\`'"]`, 'g');
+          const reg = new RegExp(`[\`'"](${completionKeyStr})[\`'"]`, "g");
           // const reg = new RegExp(`['"\`](${char})['"\`]`, "g");
           text = text.replace(reg, `${i18nT}`);
         });
@@ -1715,22 +1715,22 @@ export class Utils {
 
           // 如果包含模板变量和换行符，创建规范化变体
           if (
-            char.includes('${') &&
-            (char.includes('\r\n') || char.includes('\n'))
+            char.includes("${") &&
+            (char.includes("\r\n") || char.includes("\n"))
           ) {
             // 变体1: \r\n -> \n
-            variants.push(char.replace(/\r\n/g, '\n'));
+            variants.push(char.replace(/\r\n/g, "\n"));
             // 变体2: \r -> \n
-            variants.push(char.replace(/\r/g, '\n'));
+            variants.push(char.replace(/\r/g, "\n"));
             // 变体3: 规范化空白
             variants.push(
               char
-                .replace(/\r\n/g, '\n')
-                .replace(/\n\s+/g, '\n')
-                .replace(/\s+\n/g, '\n')
+                .replace(/\r\n/g, "\n")
+                .replace(/\n\s+/g, "\n")
+                .replace(/\s+\n/g, "\n")
             );
             // 变体4: 移除所有多余空白
-            variants.push(char.replace(/\s+/g, ' ').trim());
+            variants.push(char.replace(/\s+/g, " ").trim());
           }
 
           return Array.from(new Set(variants)); // 去重
@@ -1745,7 +1745,7 @@ export class Utils {
           const variants = createVariants(char);
           variants.forEach((variant) => {
             let completionKeyStr = Utils.getRegExpStr(variant);
-            const reg = new RegExp(`=[\`'"](${completionKeyStr})[\`'"]`, 'g');
+            const reg = new RegExp(`=[\`'"](${completionKeyStr})[\`'"]`, "g");
             text = text.replace(reg, `={${i18nT}}`);
           });
         });
@@ -1760,7 +1760,7 @@ export class Utils {
           variants.forEach((variant) => {
             let completionKeyStr = Utils.getRegExpStr(variant);
             // 只匹配被引号包围的字符串，避免替换注释等内容
-            const reg = new RegExp(`[\`'"](${completionKeyStr})[\`'"]`, 'g');
+            const reg = new RegExp(`[\`'"](${completionKeyStr})[\`'"]`, "g");
             text = text.replace(reg, `${i18nT}`);
           });
         });
@@ -1784,7 +1784,7 @@ export class Utils {
             // 确保不匹配已经被{}包围的内容
             const jsxTextRegex = new RegExp(
               `(>[^{<]*?)\\b(${completionKeyStr})\\b([^}<]*?</?)`,
-              'g'
+              "g"
             );
 
             // 先检查是否已经被替换过
@@ -1793,7 +1793,7 @@ export class Utils {
               jsxTextRegex,
               (match, before, targetText, after) => {
                 // 如果前面已经有{或者后面已经有}，说明已经被处理过了
-                if (before.includes('{') || after.includes('}')) {
+                if (before.includes("{") || after.includes("}")) {
                   return match;
                 }
                 return `${before}{${i18nT}}${after}`;
@@ -1805,7 +1805,7 @@ export class Utils {
               // 匹配简单的 >文本< 格式
               const simpleRegex = new RegExp(
                 `(>\\s*)(${completionKeyStr})(\\s*<)`,
-                'g'
+                "g"
               );
               text = text.replace(simpleRegex, `$1{${i18nT}}$3`);
             }
@@ -1833,7 +1833,7 @@ export class Utils {
   // 获取字符串的字节数
   static getBitCount(str: string) {
     let count = 0;
-    const arr = str.split('');
+    const arr = str.split("");
     arr.forEach((c: string) => {
       count += Math.ceil(c.charCodeAt(0).toString(2).length / 8);
     });
@@ -1854,7 +1854,7 @@ export class Utils {
     options?: { batchSize?: number }
   ) {
     const transSourceObj: any = {};
-    const result: any = { transSourceObj: null, message: '', batchCount: 0 };
+    const result: any = { transSourceObj: null, message: "", batchCount: 0 };
     if (isEmpty(localLangObj)) return result;
     const defaultSource = (localLangObj as any)[defaultLang];
     if (isEmpty(defaultSource)) return result;
@@ -1878,20 +1878,20 @@ export class Utils {
     };
 
     const langMap: any = {
-      zh: '中文',
-      en: '英文',
-      ko: '韩文',
-      ru: '俄文',
-      vi: '越文',
+      zh: "中文",
+      en: "英文",
+      ko: "韩文",
+      ru: "俄文",
+      vi: "越文",
     };
     const resMap: any = {
-      中文: 'zh',
-      英文: 'en',
-      韩文: 'ko',
-      俄文: 'ru',
-      越文: 'vi',
+      中文: "zh",
+      英文: "en",
+      韩文: "ko",
+      俄文: "ru",
+      越文: "vi",
     };
-    const qArr = getTransText(transSourceObj['en']);
+    const qArr = getTransText(transSourceObj["en"]);
     result.batchCount = qArr ? qArr.length : 0;
     if (!qArr || !qArr.length) {
       result.message = `${defaultLang}的源文案不能为空！`;
@@ -1909,7 +1909,7 @@ export class Utils {
       internalCreated = true;
       statusBarItem.show();
     }
-    const label = progress?.label || '翻译';
+    const label = progress?.label || "翻译";
     const externalTotal = progress?.total; // 所有文件总批次数
     const externalOffset = progress?.offset || 0; // 当前文件开始前完成批次数
     const localTotal = qArr.length; // 当前文件批次数
@@ -1931,7 +1931,7 @@ export class Utils {
         return new Promise<{ q: string[]; data: any }>(
           async (resolve, reject) => {
             const params = {
-              inputLanguage: langMap['zh'],
+              inputLanguage: langMap["zh"],
               query: q.join(SPLIT),
               cookie,
             };
@@ -1944,7 +1944,7 @@ export class Utils {
               updateBar();
             }
             if (!data || !data.data) {
-              reject(new Error((data && data.msg) || '翻译失败'));
+              reject(new Error((data && data.msg) || "翻译失败"));
               return;
             }
             resolve({ q, data });
@@ -1971,7 +1971,7 @@ export class Utils {
       result.transSourceObj = transSourceObj;
       return result;
     } catch (e: any) {
-      Message.showMessage(e.message || '翻译失败');
+      Message.showMessage(e.message || "翻译失败");
       return result;
     } finally {
       if (statusBarItem && internalCreated) {
@@ -2004,7 +2004,7 @@ export class Utils {
         });
       }
     });
-    const keys = Object.keys(transSourceObj['en'] || {});
+    const keys = Object.keys(transSourceObj["en"] || {});
     if (!keys.length) return 0;
     return Math.ceil(keys.length / maxPerBatch);
   }
@@ -2024,7 +2024,7 @@ export class Utils {
       const fileName = path.basename(fsPath);
       if (/\.(json)$/.test(fileName)) {
         try {
-          const data = fs.readFileSync(fsPath, 'utf-8');
+          const data = fs.readFileSync(fsPath, "utf-8");
           if (data) {
             const localLangObj = eval(`(${data})`);
             if (localLangObj) {
@@ -2039,18 +2039,18 @@ export class Utils {
                       const chieseStr = zhSource[k];
                       if (isOverWriteLocal) {
                         // 本地有值的会覆盖
-                        obj[k] = source[chieseStr] || '';
+                        obj[k] = source[chieseStr] || "";
                       } else {
                         if (!obj[k]) {
                           // 本地有值的不会覆盖
-                          obj[k] = source[chieseStr] || '';
+                          obj[k] = source[chieseStr] || "";
                         }
                       }
                     });
                   }
                 });
                 // 写入新内容
-                const newText = JSON.stringify(localLangObj, null, '\t');
+                const newText = JSON.stringify(localLangObj, null, "\t");
                 FileIO.writeFileToLine(fsPath, newText);
               }
             }
@@ -2075,16 +2075,16 @@ export class Utils {
   static getI18NObjectInJS(filePath: string, globalLangObj: any = {}) {
     let obj = null;
     if (filePath && /\.(js|ts)$/.test(filePath)) {
-      const data = fs.readFileSync(filePath, 'utf-8');
+      const data = fs.readFileSync(filePath, "utf-8");
       const reg = /i18n\.t\([^\)]*?\)/g;
       if (data && reg.test(data)) {
         const allKeys = data.match(reg);
-        const initLang = ['zh', 'en', 'ja'];
+        const initLang = ["zh", "en", "ja"];
         obj = {};
         // console.log("allKeys", allKeys);
         allKeys.forEach((k: any) => {
-          k = k.replace('i18n.t', '');
-          k = k.replace(/[\t\n'"\(\)]/g, '');
+          k = k.replace("i18n.t", "");
+          k = k.replace(/[\t\n'"\(\)]/g, "");
           initLang.forEach((lang) => {
             if (!obj[lang]) {
               obj[lang] = {};
