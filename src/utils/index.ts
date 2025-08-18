@@ -14,7 +14,7 @@ import * as babelParser from "@babel/parser";
 import traverse from "@babel/traverse";
 import * as t from "@babel/types";
 import generate from "@babel/generator";
-import { parse as vueSfcParse } from "@vue/compiler-sfc";
+import { parse as vueSfcParse } from "@vue/compiler-sfc/dist/compiler-sfc.esm-browser.js";
 import { baseParse as vueBaseParse, NodeTypes } from "@vue/compiler-dom";
 // removed unused: compilerDom
 

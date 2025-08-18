@@ -221,8 +221,6 @@
     "@types/vscode": "^1.59.0",
     "@typescript-eslint/eslint-plugin": "^4.29.3",
     "@typescript-eslint/parser": "^4.29.3",
-    "@vue/compiler-dom": "^3.5.18",
-    "@vue/compiler-sfc": "^3.5.18",
     "babel-plugin-import": "^1.13.3",
     "clean-webpack-plugin": "^4.0.0-alpha.0",
     "commitizen": "^4.3.0",
@@ -247,6 +245,8 @@
   },
   "dependencies": {
     "@ant-design/icons": "^4.6.4",
+    "@vue/compiler-dom": "^3.5.18",
+    "@vue/compiler-sfc": "^3.5.18",
     "antd": "^4.16.13",
     "conventional-changelog-cli": "^2.2.2",
     "conventional-changelog-gitmoji-config": "^1.4.4",
