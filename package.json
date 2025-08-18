@@ -95,8 +95,8 @@
       {
         "command": "extension.du.i18n.receive",
         "title": "自定义命令"
-      }
-      ,{
+      },
+      {
         "command": "extension.du.i18n.generateMissingLangFiles",
         "title": "生成缺失语言文件"
       }
