@@ -593,6 +593,8 @@ export class Utils {
       StringLiteral(path: any) {
         const val = path.node.value;
         if (!val || !Utils._containsChinese(val)) return;
+        // Skip strings that look like special identifiers (e.g., imported names like $$goPage)
+        if (/^\$\$[A-Za-z0-9_]+$/.test(val)) return;
         if (isInsideConsoleCall(path) || isInsideDecorator(path)) return;
         if (
           Utils._isInsideI18nCall(path, scriptCalleeName) ||
@@ -646,6 +648,7 @@ export class Utils {
       JSXText(path: any) {
         const val = path.node.value && path.node.value.trim();
         if (!val || !Utils._containsChinese(val)) return;
+        if (/^\$\$[A-Za-z0-9_]+$/.test(val)) return;
         const key = allocateKey(val);
         const call = t.callExpression(Utils._buildCallee(jsxCalleeName), [
           t.stringLiteral(key),
@@ -714,8 +717,34 @@ export class Utils {
       },
     });
 
-    const outScript = generate(ast, { retainLines: true }, scriptContent);
-    return { code: outScript.code, found, varObj };
+    const outScript = generate(
+      ast,
+      { retainLines: true, comments: true },
+      scriptContent
+    );
+
+    // --- Preserve semicolon style (don't add where source line had none) ---
+    const originalLines = scriptContent.split(/\r?\n/);
+    const newLines = outScript.code.split(/\r?\n/);
+    const minLen = Math.min(originalLines.length, newLines.length);
+    for (let i = 0; i < minLen; i++) {
+      const o = originalLines[i];
+      const n = newLines[i];
+      if (!o || !n) continue;
+      const ot = o.trim();
+      const nt = n.trim();
+      if (!ot || ot.startsWith("//")) continue; // skip empty & comment-only lines
+      // Detect if original had semicolon
+      const origHasSemi = /;\s*(\/\/.*)?$/.test(ot);
+      if (!origHasSemi) {
+        // If generator added trailing semicolon we drop it (keep possible comment)
+        if (/;\s*(\/\/.*)?$/.test(nt)) {
+          newLines[i] = n.replace(/;\s*(\/\/.*)?$/, (_m, c) => (c ? c : ""));
+        }
+      }
+    }
+    const finalCode = newLines.join("\n");
+    return { code: finalCode, found, varObj };
   }
 
   private static _processVueSfc(
