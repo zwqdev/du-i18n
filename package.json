@@ -96,6 +96,10 @@
         "command": "extension.du.i18n.receive",
         "title": "自定义命令"
       }
+      ,{
+        "command": "extension.du.i18n.generateMissingLangFiles",
+        "title": "生成缺失语言文件"
+      }
     ],
     "menus": {
       "editor/context": [
@@ -153,6 +157,10 @@
         {
           "command": "extension.du.i18n.splitLangFile",
           "group": "5_cutcopypaste@25"
+        },
+        {
+          "command": "extension.du.i18n.generateMissingLangFiles",
+          "group": "5_cutcopypaste@27"
         },
         {
           "command": "extension.du.i18n.updateLocalLangPackage",

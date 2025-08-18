@@ -1069,6 +1069,134 @@ export async function activate(context: vscode.ExtensionContext) {
       )
     );
 
+    // 监听命令-补全缺失语言文件（根据默认语言翻译生成新语言文件）
+    context.subscriptions.push(
+      vscode.commands.registerTextEditorCommand(
+        'extension.du.i18n.generateMissingLangFiles',
+        async function () {
+          try {
+            const defaultLang = config.getDefaultLang();
+            const allLangs = config.getTempLangs();
+            const langPathsGlob = config.getLangPaths();
+            if (!langPathsGlob) {
+              Message.showMessage('未配置语言文件路径');
+              return;
+            }
+            const files = await FileIO.getFiles(langPathsGlob);
+            if (!files.length) {
+              Message.showMessage('未找到任何现有语言文件');
+              return;
+            }
+            const fsPathMap: Record<string, string> = {};
+            files.forEach(({ fsPath }) => {
+              const base = path.basename(fsPath);
+              if (/\.json$/.test(base)) {
+                const lang = base.split('.')[0];
+                fsPathMap[lang] = fsPath;
+              }
+            });
+            if (!fsPathMap[defaultLang]) {
+              Message.showMessage(`缺少默认语言文件 ${defaultLang}.json`);
+              return;
+            }
+            const missing = allLangs.filter(
+              (l) => l && l !== defaultLang && !fsPathMap[l]
+            );
+            if (!missing.length) {
+              Message.showMessage('没有需要补全的语言文件');
+              return;
+            }
+            // 读取默认语言内容
+            let defaultContent: any = {};
+            try {
+              const raw = fs.readFileSync(fsPathMap[defaultLang], 'utf-8');
+              if (raw) defaultContent = eval('(' + raw + ')');
+            } catch (e) {
+              Message.showMessage('读取默认语言文件失败');
+              return;
+            }
+            if (!defaultContent || typeof defaultContent !== 'object') {
+              Message.showMessage('默认语言文件内容无效');
+              return;
+            }
+            let cookie = '';
+            const login = await Utils.getCookie(config.getAccount());
+            if (login?.code !== '000000') {
+              Message.showMessage(login?.msg || '登录失败');
+              return;
+            }
+            cookie = `test_gj_ticket=${login.data}`;
+            const statusBar = vscode.window.createStatusBarItem(
+              vscode.StatusBarAlignment.Left
+            );
+            statusBar.text = `$(sync~spin) 生成缺失语言 0/${missing.length}`;
+            statusBar.show();
+            let created = 0;
+            for (let i = 0; i < missing.length; i++) {
+              const lang = missing[i];
+              try {
+                // 构造 localLangObj 结构
+                const localLangObj: any = {
+                  [defaultLang]: { ...defaultContent },
+                };
+                localLangObj[lang] = {};
+                Object.keys(defaultContent).forEach(
+                  (k) => (localLangObj[lang][k] = '')
+                );
+                let transSourceObj: any = null;
+                let message = '';
+                const llmRes = await Utils.getTransSourceObjByLlm(
+                  localLangObj,
+                  defaultLang,
+                  cookie,
+                  { suppressBatchStatus: true },
+                  { batchSize: config.getTransBatchSize() }
+                );
+                transSourceObj = llmRes.transSourceObj;
+                message = llmRes.message;
+                if (transSourceObj && transSourceObj[lang]) {
+                  const mapped: any = {};
+                  Object.entries(defaultContent).forEach(([k, v]: any) => {
+                    mapped[k] = transSourceObj[lang][v] || '';
+                  });
+                  const targetDir = path.dirname(fsPathMap[defaultLang]);
+                  const targetPath = path.join(targetDir, `${lang}.json`);
+                  fs.writeFileSync(
+                    targetPath,
+                    JSON.stringify(mapped, null, '\t'),
+                    'utf-8'
+                  );
+                  created++;
+                } else {
+                  Message.showMessage(
+                    `生成 ${lang}.json 失败: ${message || '无结果'}`
+                  );
+                }
+              } catch (e: any) {
+                console.error('generate lang error', lang, e);
+                Message.showMessage(`生成 ${lang}.json 异常`);
+              } finally {
+                statusBar.text = `$(sync~spin) 生成缺失语言 ${i + 1}/${
+                  missing.length
+                }`;
+              }
+            }
+            statusBar.hide();
+            statusBar.dispose();
+            Message.showMessage(
+              `生成完成：成功 ${created}/${missing.length}`,
+              created === missing.length
+                ? MessageType.INFO
+                : MessageType.WARNING
+            );
+          } catch (e) {
+            console.error('generateMissingLangFiles error', e);
+            Message.showMessage('生成缺失语言失败');
+          }
+        }
+      )
+    );
+
     // 在插件卸载时或使用完成后，断开与服务器的连接
     context.subscriptions.push({
       dispose() {
