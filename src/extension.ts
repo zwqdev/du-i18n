@@ -190,53 +190,85 @@ export async function activate(context: vscode.ExtensionContext) {
                     "所有文件已被 scanIgnoreGlobs 规则忽略"
                   );
                 }
-                validFiles.forEach((file: any, i: number) => {
-                  console.log("file", file);
-                  const fileName = file;
-                  const prefixKey = config.getPrefixKey(fileName, i.toString());
-                  const pageEnName = config.generatePageEnName(fileName);
-                  const tempFileName = config.getTempFileName();
-                  const isNeedRandSuffix = config.getIsNeedRandSuffix();
-                  const isHookImport = config.getHookImport();
+                // Show a status bar item while batch scanning
+                const total = validFiles.length;
+                let processedCount = 0;
+                const statusBar = vscode.window.createStatusBarItem(
+                  vscode.StatusBarAlignment.Left
+                );
+                statusBar.text = `$(sync~spin) 批量扫描 0/${total}`;
+                statusBar.show();
 
-                  Utils.handleScanAndInit(
-                    fileName,
-                    initLang,
-                    keys,
-                    defaultLang,
-                    prefixKey,
-                    isHookImport,
-                    (newLangObj) => {
-                      if (!isEmpty(newLangObj)) {
-                        FileIO.writeIntoTempFile(
-                          tempPaths,
+                const tasks = validFiles.map((file: any, i: number) =>
+                  (async () => {
+                    try {
+                      const fileName = file;
+                      const prefixKey = config.getPrefixKey(
+                        fileName,
+                        i.toString()
+                      );
+                      const pageEnName = config.generatePageEnName(fileName);
+                      const tempFileName = config.getTempFileName();
+                      const isNeedRandSuffix = config.getIsNeedRandSuffix();
+                      const isHookImport = config.getHookImport();
+
+                      // Use astProcessFile which returns a Promise<newLangObj|null>
+                      let newLangObj: any = null;
+                      try {
+                        newLangObj = await Utils.astProcessFile(
                           fileName,
-                          newLangObj,
-                          pageEnName,
-                          tempFileName,
-                          isNeedRandSuffix,
-                          async () => {
-                            if (config.isOnline()) {
-                              config.handleSendToOnline(
-                                newLangObj,
-                                pageEnName,
-                                async () => {
-                                  if (i === validFiles.length - 1) {
-                                    handleRefresh();
+                          initLang,
+                          keys,
+                          defaultLang,
+                          prefixKey,
+                          isHookImport
+                        );
+                      } catch (e) {
+                        console.error("astProcessFile error", e);
+                        newLangObj = null;
+                      }
+
+                      if (newLangObj) {
+                        await new Promise((resolve) => {
+                          FileIO.writeIntoTempFile(
+                            tempPaths,
+                            fileName,
+                            newLangObj,
+                            pageEnName,
+                            tempFileName,
+                            isNeedRandSuffix,
+                            async () => {
+                              if (config.isOnline()) {
+                                config.handleSendToOnline(
+                                  newLangObj,
+                                  pageEnName,
+                                  async () => {
+                                    resolve(null);
                                   }
-                                }
-                              );
-                            } else {
-                              if (i === validFiles.length - 1) {
-                                handleRefresh();
+                                );
+                              } else {
+                                resolve(null);
                               }
                             }
-                          }
-                        );
+                          );
+                        });
+                      }
+                    } catch (e) {
+                      console.error("multiScanAndGenerate file error", e);
+                    } finally {
+                      processedCount++;
+                      statusBar.text = `$(sync~spin) 批量扫描 ${processedCount}/${total}`;
+                      if (processedCount === total) {
+                        statusBar.hide();
+                        statusBar.dispose();
+                        handleRefresh();
                       }
                     }
-                  );
-                });
+                  })()
+                );
+
+                // fire-and-forget; allow tasks to run concurrently
+                Promise.all(tasks).catch((e) => console.error(e));
               })
               .catch((e) => {
                 console.error("getFolderFiles e", e);
