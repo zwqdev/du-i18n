@@ -4,7 +4,7 @@ import { FileIO } from "./fileIO";
 import * as fs from "fs";
 import * as path from "path";
 import { isEmpty } from "lodash";
-import * as micromatch from "micromatch";
+const micromatch = require("micromatch");
 
 export class Config {
   private configFilePath: string;
