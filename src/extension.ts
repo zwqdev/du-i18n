@@ -1,14 +1,14 @@
-import * as vscode from 'vscode';
+import * as vscode from "vscode";
 // import TelemetryReporter from "vscode-extension-telemetry";
-import { Utils } from './utils';
-import { VSCodeUI } from './utils/vscode-ui';
-import { FileIO } from './utils/fileIO';
-import { Config } from './utils/config';
-import { MessageType, Message } from './utils/message';
-const fs = require('fs');
-const path = require('path');
-const isEmpty = require('lodash/isEmpty');
-import { ViewLoader } from './view/ViewLoader';
+import { Utils } from "./utils";
+import { VSCodeUI } from "./utils/vscode-ui";
+import { FileIO } from "./utils/fileIO";
+import { Config } from "./utils/config";
+import { MessageType, Message } from "./utils/message";
+const fs = require("fs");
+const path = require("path");
+const isEmpty = require("lodash/isEmpty");
+import { ViewLoader } from "./view/ViewLoader";
 
 interface LangType {
   defaultKey: string;
@@ -27,7 +27,7 @@ export async function activate(context: vscode.ExtensionContext) {
     config.init(context, () => {
       // 渲染语言
       VSCodeUI.renderDecoration(config);
-      console.log('config init complete');
+      console.log("config init complete");
       // try {
       // 	// 记录用户行为数据，只会读取package.json文件信息中的（项目名称、版本、项目描述），其余内容不会读取
       // 	reporter.sendTelemetryEvent("du_i18n_deyi_init", {
@@ -48,7 +48,7 @@ export async function activate(context: vscode.ExtensionContext) {
           if (jsonReg.test(fileName)) {
             // 需要扩展
             let transSourcePaths = config.getTransSourcePaths();
-            transSourcePaths = transSourcePaths.replace(/\*/g, '');
+            transSourcePaths = transSourcePaths.replace(/\*/g, "");
             // console.log('transSourcePaths', fileName, transSourcePaths);
             if (FileIO.isIncludePath(fileName, transSourcePaths)) {
               // console.log('setTransSourceObj');
@@ -58,7 +58,7 @@ export async function activate(context: vscode.ExtensionContext) {
             const configFilePath = config.getConfigFilePath();
             if (FileIO.isIncludePath(fileName, configFilePath)) {
               config.init(context, () => {});
-              console.log('deyi2', config);
+              console.log("deyi2", config);
             }
           }
           if (fileReg.test(fileName)) {
@@ -88,7 +88,7 @@ export async function activate(context: vscode.ExtensionContext) {
     // 监听命令-扫描中文
     context.subscriptions.push(
       vscode.commands.registerTextEditorCommand(
-        'extension.du.i18n.scanAndGenerate',
+        "extension.du.i18n.scanAndGenerate",
         async function () {
           // console.log("vscode 扫描中文")
           try {
@@ -150,7 +150,7 @@ export async function activate(context: vscode.ExtensionContext) {
               );
             }
           } catch (e) {
-            console.error('scanAndGenerate e', e);
+            console.error("scanAndGenerate e", e);
           }
         }
       )
@@ -159,7 +159,7 @@ export async function activate(context: vscode.ExtensionContext) {
     // 监听命令-批量扫描中文
     context.subscriptions.push(
       vscode.commands.registerTextEditorCommand(
-        'extension.du.i18n.multiScanAndGenerate',
+        "extension.du.i18n.multiScanAndGenerate",
         async () => {
           const folderUri = await vscode.window.showOpenDialog({
             canSelectFiles: false,
@@ -181,17 +181,17 @@ export async function activate(context: vscode.ExtensionContext) {
 
             FileIO.getFolderFiles(folderPath)
               .then(async (files: any[]) => {
-                console.log('files', files);
+                console.log("files", files);
                 const validFiles = files.filter(
                   (f: string) => !config.isScanIgnored(f)
                 );
                 if (files.length && !validFiles.length) {
                   vscode.window.showInformationMessage(
-                    '所有文件已被 scanIgnoreGlobs 规则忽略'
+                    "所有文件已被 scanIgnoreGlobs 规则忽略"
                   );
                 }
                 validFiles.forEach((file: any, i: number) => {
-                  console.log('file', file);
+                  console.log("file", file);
                   const fileName = file;
                   const prefixKey = config.getPrefixKey(fileName, i.toString());
                   const pageEnName = config.generatePageEnName(fileName);
@@ -239,7 +239,7 @@ export async function activate(context: vscode.ExtensionContext) {
                 });
               })
               .catch((e) => {
-                console.error('getFolderFiles e', e);
+                console.error("getFolderFiles e", e);
               });
           }
         }
@@ -249,7 +249,7 @@ export async function activate(context: vscode.ExtensionContext) {
     // 监听命令-在线翻译
     context.subscriptions.push(
       vscode.commands.registerTextEditorCommand(
-        'extension.du.i18n.translateFromChineseKey',
+        "extension.du.i18n.translateFromChineseKey",
         async function () {
           try {
             // // 记录用户行为数据
@@ -265,7 +265,7 @@ export async function activate(context: vscode.ExtensionContext) {
 
             const handleTranslate = async (
               sourObj: any = {},
-              filePath: string = ''
+              filePath: string = ""
             ) => {
               await Utils.translateLocalFile(
                 sourObj,
@@ -286,7 +286,7 @@ export async function activate(context: vscode.ExtensionContext) {
             if (activeEditor) {
               const { fileName } = activeEditor.document || {};
               const tempPaths = config.getTempPaths();
-              const tempPathName = tempPaths.replace(/\*/g, '');
+              const tempPathName = tempPaths.replace(/\*/g, "");
               // console.log('fileName', fileName, tempPathName);
               if (
                 fileName &&
@@ -296,7 +296,7 @@ export async function activate(context: vscode.ExtensionContext) {
                 if (!/\.(json)$/.test(fileName)) {
                   return;
                 }
-                const data = fs.readFileSync(fileName, 'utf-8');
+                const data = fs.readFileSync(fileName, "utf-8");
                 if (!data) {
                   return;
                 }
@@ -304,8 +304,8 @@ export async function activate(context: vscode.ExtensionContext) {
 
                 const login = await Utils.getCookie(config.getAccount());
 
-                if (login?.code !== '000000') {
-                  Message.showMessage(login?.msg || '登录失败');
+                if (login?.code !== "000000") {
+                  Message.showMessage(login?.msg || "登录失败");
                   return;
                 }
                 // 调用百度翻译
@@ -315,7 +315,7 @@ export async function activate(context: vscode.ExtensionContext) {
                     langKey,
                     `test_gj_ticket=${login.data}`,
                     {
-                      label: '单文件翻译',
+                      label: "单文件翻译",
                     },
                     { batchSize: config.getTransBatchSize() }
                   );
@@ -347,7 +347,7 @@ export async function activate(context: vscode.ExtensionContext) {
     // 监听命令-批量在线翻译
     context.subscriptions.push(
       vscode.commands.registerTextEditorCommand(
-        'extension.du.i18n.multiTranslateFromChineseKey',
+        "extension.du.i18n.multiTranslateFromChineseKey",
         async function () {
           try {
             // console.log("vscode 中文转译")
@@ -357,7 +357,7 @@ export async function activate(context: vscode.ExtensionContext) {
 
             const handleTranslate = async (
               sourObj: any = {},
-              filePath: string = ''
+              filePath: string = ""
             ) => {
               await Utils.translateLocalFile(
                 sourObj,
@@ -387,19 +387,19 @@ export async function activate(context: vscode.ExtensionContext) {
             } else {
               // 返回没有翻译的文件集合
               const resultObj: any = await config.handleMissingDetection(
-                'filePath'
+                "filePath"
               );
 
               // 空结果或异常情况直接返回
               if (!resultObj || isEmpty(resultObj)) {
-                Message.showMessage('没有需要翻译的内容');
+                Message.showMessage("没有需要翻译的内容");
                 return;
               }
 
               const login = await Utils.getCookie(config.getAccount());
 
-              if (login?.code !== '000000') {
-                Message.showMessage(login?.msg || '登录失败');
+              if (login?.code !== "000000") {
+                Message.showMessage(login?.msg || "登录失败");
                 return;
               }
               // 预聚合: 先算每个文件的批次数, 过滤掉无需翻译的文件
@@ -417,12 +417,12 @@ export async function activate(context: vscode.ExtensionContext) {
                 }));
 
               if (!fileEntries.length) {
-                Message.showMessage('所有文件已被 scanIgnoreGlobs 规则忽略');
+                Message.showMessage("所有文件已被 scanIgnoreGlobs 规则忽略");
                 return;
               }
               const filtered = fileEntries.filter((f) => f.batchCount > 0);
               if (!filtered.length) {
-                Message.showMessage('没有需要翻译的内容');
+                Message.showMessage("没有需要翻译的内容");
                 return;
               }
               // 批次级进度：已翻译批次 / 总批次
@@ -431,7 +431,7 @@ export async function activate(context: vscode.ExtensionContext) {
                 0
               );
               if (!totalBatches) {
-                Message.showMessage('没有需要翻译的内容');
+                Message.showMessage("没有需要翻译的内容");
                 return;
               }
               const sharedStatusBar = vscode.window.createStatusBarItem(
@@ -459,7 +459,7 @@ export async function activate(context: vscode.ExtensionContext) {
                             offset: fileOffset,
                             suppressBatchStatus: true, // 由外部统一展示
                             reuseStatusBar: sharedStatusBar,
-                            label: '批量翻译',
+                            label: "批量翻译",
                             onUpdate: (done: number, total: number) => {
                               if (done > maxDone) {
                                 maxDone = done;
@@ -476,7 +476,7 @@ export async function activate(context: vscode.ExtensionContext) {
                         return { code: 500, message };
                       }
                     } catch (e: any) {
-                      console.error('e', e);
+                      console.error("e", e);
                       return { code: 500, message: e.message };
                     }
                   };
@@ -513,14 +513,14 @@ export async function activate(context: vscode.ExtensionContext) {
                   sharedStatusBar.dispose();
                 })
                 .catch((e) => {
-                  console.error('e', e);
+                  console.error("e", e);
                   Message.showMessage(`翻译出错，请稍后重试`);
                   sharedStatusBar.hide();
                   sharedStatusBar.dispose();
                 });
             }
           } catch (e) {
-            console.error('e', e);
+            console.error("e", e);
             Message.showMessage(`翻译出错，请稍后重试`);
           }
         }
@@ -530,7 +530,7 @@ export async function activate(context: vscode.ExtensionContext) {
     // 设置
     context.subscriptions.push(
       vscode.commands.registerTextEditorCommand(
-        'extension.du.i18n.setting',
+        "extension.du.i18n.setting",
         async function () {
           // openConfigCommand();
           const activeEditor = vscode.window.activeTextEditor;
@@ -539,7 +539,7 @@ export async function activate(context: vscode.ExtensionContext) {
             config.openSetting(fileName, (isInit) => {
               if (isInit) {
                 config.init(context, () => {});
-                console.log('deyi2', config);
+                console.log("deyi2", config);
                 // // 记录用户行为数据
                 // reporter.sendTelemetryEvent("du_i18n_deyi_init", {
                 // 	action: "初始化-设置回调",
@@ -560,7 +560,7 @@ export async function activate(context: vscode.ExtensionContext) {
     // 监听命令-切换显示语言
     context.subscriptions.push(
       vscode.commands.registerTextEditorCommand(
-        'extension.du.i18n.change',
+        "extension.du.i18n.change",
         async function () {
           // 多语言平台
           const defaultLang = config.getDefaultLang();
@@ -591,15 +591,15 @@ export async function activate(context: vscode.ExtensionContext) {
     // 监听自定义命令-用于接收下一层返回的数据并进行处理
     context.subscriptions.push(
       vscode.commands.registerCommand(
-        'extension.du.i18n.receive',
+        "extension.du.i18n.receive",
         async function (event) {
           console.log(
-            'registerCommand callback extension.du.i18n.receive',
+            "registerCommand callback extension.du.i18n.receive",
             event
           );
           if (event) {
             switch (event.type) {
-              case 'READY': // 渲染完成，可以传递参数
+              case "READY": // 渲染完成，可以传递参数
                 const { defaultKey, language = {}, type } = langObj || {};
                 const langKey = VSCodeUI.userKey || defaultKey;
                 const payload = {
@@ -608,12 +608,12 @@ export async function activate(context: vscode.ExtensionContext) {
                   defaultFormat: type,
                 };
                 ViewLoader.postMessageToWebview({
-                  type: 'TRANSLATE-POST',
+                  type: "TRANSLATE-POST",
                   payload,
                 });
                 break;
 
-              case 'TRANSLATE-WRITE': // 写入文件
+              case "TRANSLATE-WRITE": // 写入文件
                 const data = event.payload || {};
                 if (data.lang) {
                   const { langFilePath = {}, filePath, type } = langObj || {};
@@ -621,14 +621,14 @@ export async function activate(context: vscode.ExtensionContext) {
                   if (fsPath && data.text) {
                     if (FileIO.writeJsonFileSync(fsPath, data.text)) {
                       return ViewLoader.postMessageToWebview({
-                        type: 'TRANSLATE-SHOWMSG',
+                        type: "TRANSLATE-SHOWMSG",
                         payload: true,
                       });
                     }
                   }
                 }
                 return ViewLoader.postMessageToWebview({
-                  type: 'TRANSLATE-SHOWMSG',
+                  type: "TRANSLATE-SHOWMSG",
                   payload: false,
                 });
             }
@@ -644,7 +644,7 @@ export async function activate(context: vscode.ExtensionContext) {
     // 监听命令-批量新增
     context.subscriptions.push(
       vscode.commands.registerTextEditorCommand(
-        'extension.du.i18n.add',
+        "extension.du.i18n.add",
         async function () {
           ViewLoader.showWebview(context);
         }
@@ -660,7 +660,7 @@ export async function activate(context: vscode.ExtensionContext) {
     // 监听命令-刷新
     context.subscriptions.push(
       vscode.commands.registerTextEditorCommand(
-        'extension.du.i18n.updateLocalLangPackage',
+        "extension.du.i18n.updateLocalLangPackage",
         async function () {
           await config.refreshGlobalLangObj(true);
           // 重新渲染
@@ -677,7 +677,7 @@ export async function activate(context: vscode.ExtensionContext) {
     // 监听命令-文件统计
     context.subscriptions.push(
       vscode.commands.registerTextEditorCommand(
-        'extension.du.i18n.analytics',
+        "extension.du.i18n.analytics",
         async function () {
           const selectFolder = await vscode.window.showOpenDialog({
             canSelectFiles: false,
@@ -692,10 +692,10 @@ export async function activate(context: vscode.ExtensionContext) {
             selectFolder[0].path,
             config.getBigFileLineCount()
           );
-          console.log('result', result);
+          console.log("result", result);
           const panel = vscode.window.createWebviewPanel(
-            'analyticsResult',
-            '分析与统计-结果',
+            "analyticsResult",
+            "分析与统计-结果",
             vscode.ViewColumn.Two,
             {}
           );
@@ -704,28 +704,28 @@ export async function activate(context: vscode.ExtensionContext) {
           if (result && !isEmpty(result.fileTypeObj)) {
             str += `文件统计（类型/个数）：<br/>\n`;
             str += Object.entries(result.fileTypeObj)
-              .map(([k, v]) => k + ' ' + v)
-              .join('\n<br/>\n');
-            str += '\n<br/>';
+              .map(([k, v]) => k + " " + v)
+              .join("\n<br/>\n");
+            str += "\n<br/>";
             str +=
-              '文件总数：' +
+              "文件总数：" +
               Object.values(result.fileTypeObj).reduce(
                 (pre: any, v: any) => pre + v,
                 0
               ) +
-              '\n<br/>\n';
-            str += '\n<br/>\n<br/>';
+              "\n<br/>\n";
+            str += "\n<br/>\n<br/>";
             str += `index文件（类型/个数）：<br/>\n`;
             str += Object.entries(result.indexFileObj)
-              .map(([k, v]) => k + ' ' + v)
-              .join('\n<br/>\n');
-            str += Object.keys(result.indexFileObj).length ? '' : '无';
-            str += '\n<br/>\n<br/>\n<br/>';
+              .map(([k, v]) => k + " " + v)
+              .join("\n<br/>\n");
+            str += Object.keys(result.indexFileObj).length ? "" : "无";
+            str += "\n<br/>\n<br/>\n<br/>";
             str += `大文件统计（路径/行数）：<br/>\n`;
             if (!isEmpty(result.bigFileList)) {
               result.bigFileList.forEach((item: any) => {
                 str += `${item.path}   ${item.count}`;
-                str += '<br/>\n';
+                str += "<br/>\n";
               });
             } else {
               str += `无\n`;
@@ -746,7 +746,7 @@ export async function activate(context: vscode.ExtensionContext) {
     // 监听命令-上传文案
     context.subscriptions.push(
       vscode.commands.registerTextEditorCommand(
-        'extension.du.i18n.updateLocalToOnline',
+        "extension.du.i18n.updateLocalToOnline",
         async function () {
           const activeEditor = vscode.window.activeTextEditor;
           if (activeEditor) {
@@ -784,7 +784,7 @@ export async function activate(context: vscode.ExtensionContext) {
     // 监听命令-批量上传文案
     context.subscriptions.push(
       vscode.commands.registerTextEditorCommand(
-        'extension.du.i18n.batchUpdateLocalToOnline',
+        "extension.du.i18n.batchUpdateLocalToOnline",
         async function () {
           if (config.isOnline()) {
             config.handleSyncAllTempFileToOnline(() => {
@@ -823,7 +823,7 @@ export async function activate(context: vscode.ExtensionContext) {
     // 监听命令-拉取远程文案
     context.subscriptions.push(
       vscode.commands.registerTextEditorCommand(
-        'extension.du.i18n.updateLocalFromOnline',
+        "extension.du.i18n.updateLocalFromOnline",
         async function () {
           const activeEditor = vscode.window.activeTextEditor;
           if (activeEditor) {
@@ -872,22 +872,22 @@ export async function activate(context: vscode.ExtensionContext) {
     // 监听命令-翻译漏检
     context.subscriptions.push(
       vscode.commands.registerTextEditorCommand(
-        'extension.du.i18n.missingDetection',
+        "extension.du.i18n.missingDetection",
         async function () {
           const activeEditor = vscode.window.activeTextEditor;
           if (activeEditor) {
             const { fileName } = activeEditor.document || {};
             const missCheckResultPath = config.getMissCheckResultPath();
             const result: any = await config.handleMissingDetection();
-            console.log('result', result);
+            console.log("result", result);
             let str = `翻译漏检-结果：\n`;
             if (!isEmpty(result)) {
               const missTranslateKeys = result.missTranslateKeys;
               delete result.missTranslateKeys;
-              str += missTranslateKeys.join('\n');
-              str += '\n\n';
-              str += '详情如下：\n';
-              str += JSON.stringify(result, null, '\t');
+              str += missTranslateKeys.join("\n");
+              str += "\n\n";
+              str += "详情如下：\n";
+              str += JSON.stringify(result, null, "\t");
             } else if (result !== null) {
               str += `太棒了，已全部翻译完成！！！`;
             } else {
@@ -920,7 +920,7 @@ export async function activate(context: vscode.ExtensionContext) {
     // 监听命令-远程漏检文案
     context.subscriptions.push(
       vscode.commands.registerTextEditorCommand(
-        'extension.du.i18n.searchUntranslateText',
+        "extension.du.i18n.searchUntranslateText",
         async function () {
           try {
             const activeEditor = vscode.window.activeTextEditor;
@@ -940,7 +940,7 @@ export async function activate(context: vscode.ExtensionContext) {
                     .filter((k) => k && k !== langKey)
                     .map((k) => ({ label: k, value: k }));
                   const selected = await vscode.window.showQuickPick(items, {
-                    placeHolder: '请选择目标语言',
+                    placeHolder: "请选择目标语言",
                   });
                   if (selected) {
                     const untransLangObj = await config.searchUntranslateText(
@@ -948,7 +948,7 @@ export async function activate(context: vscode.ExtensionContext) {
                       selected.value
                     );
                     if (isEmpty(untransLangObj)) {
-                      throw new Error('数据异常');
+                      throw new Error("数据异常");
                     }
                     const localFilePath = config.getLanguageMissOnlinePath();
                     const filePath: any = await FileIO.writeContentToLocalFile(
@@ -1006,7 +1006,7 @@ export async function activate(context: vscode.ExtensionContext) {
     // 监听命令-合并语言文件
     context.subscriptions.push(
       vscode.commands.registerTextEditorCommand(
-        'extension.du.i18n.mergeLangFile',
+        "extension.du.i18n.mergeLangFile",
         async function () {
           const activeEditor = vscode.window.activeTextEditor;
           if (activeEditor) {
@@ -1018,14 +1018,14 @@ export async function activate(context: vscode.ExtensionContext) {
               tempPaths,
               tempLangs,
               (_targetPath: string, count: number, status: string) => {
-                if (status === 'SUCCESS') {
+                if (status === "SUCCESS") {
                   Message.showMessage(
                     `合并成功，更新 ${count} 个文件`,
                     MessageType.INFO
                   );
-                } else if (status === 'NO_CONTENT') {
+                } else if (status === "NO_CONTENT") {
                   // 已在内部提示，无需重复
-                } else if (status === 'NO_TEMP_DIR') {
+                } else if (status === "NO_TEMP_DIR") {
                   // 已在内部提示
                 }
               }
@@ -1038,7 +1038,7 @@ export async function activate(context: vscode.ExtensionContext) {
     // 监听命令-拆分语言文件
     context.subscriptions.push(
       vscode.commands.registerTextEditorCommand(
-        'extension.du.i18n.splitLangFile',
+        "extension.du.i18n.splitLangFile",
         async function () {
           const activeEditor = vscode.window.activeTextEditor;
           if (activeEditor) {
@@ -1072,26 +1072,26 @@ export async function activate(context: vscode.ExtensionContext) {
     // 监听命令-补全缺失语言文件（根据默认语言翻译生成新语言文件）
     context.subscriptions.push(
       vscode.commands.registerTextEditorCommand(
-        'extension.du.i18n.generateMissingLangFiles',
+        "extension.du.i18n.generateMissingLangFiles",
         async function () {
           try {
             const defaultLang = config.getDefaultLang();
             const allLangs = config.getTempLangs();
             const langPathsGlob = config.getLangPaths();
             if (!langPathsGlob) {
-              Message.showMessage('未配置语言文件路径');
+              Message.showMessage("未配置语言文件路径");
               return;
             }
             const files = await FileIO.getFiles(langPathsGlob);
             if (!files.length) {
-              Message.showMessage('未找到任何现有语言文件');
+              Message.showMessage("未找到任何现有语言文件");
               return;
             }
             const fsPathMap: Record<string, string> = {};
             files.forEach(({ fsPath }) => {
               const base = path.basename(fsPath);
               if (/\.json$/.test(base)) {
-                const lang = base.split('.')[0];
+                const lang = base.split(".")[0];
                 fsPathMap[lang] = fsPath;
               }
             });
@@ -1103,26 +1103,26 @@ export async function activate(context: vscode.ExtensionContext) {
               (l) => l && l !== defaultLang && !fsPathMap[l]
             );
             if (!missing.length) {
-              Message.showMessage('没有需要补全的语言文件');
+              Message.showMessage("没有需要补全的语言文件");
               return;
             }
             // 读取默认语言内容
             let defaultContent: any = {};
             try {
-              const raw = fs.readFileSync(fsPathMap[defaultLang], 'utf-8');
-              if (raw) defaultContent = eval('(' + raw + ')');
+              const raw = fs.readFileSync(fsPathMap[defaultLang], "utf-8");
+              if (raw) defaultContent = eval("(" + raw + ")");
             } catch (e) {
-              Message.showMessage('读取默认语言文件失败');
+              Message.showMessage("读取默认语言文件失败");
               return;
             }
-            if (!defaultContent || typeof defaultContent !== 'object') {
-              Message.showMessage('默认语言文件内容无效');
+            if (!defaultContent || typeof defaultContent !== "object") {
+              Message.showMessage("默认语言文件内容无效");
               return;
             }
-            let cookie = '';
+            let cookie = "";
             const login = await Utils.getCookie(config.getAccount());
-            if (login?.code !== '000000') {
-              Message.showMessage(login?.msg || '登录失败');
+            if (login?.code !== "000000") {
+              Message.showMessage(login?.msg || "登录失败");
               return;
             }
             cookie = `test_gj_ticket=${login.data}`;
@@ -1141,10 +1141,10 @@ export async function activate(context: vscode.ExtensionContext) {
                 };
                 localLangObj[lang] = {};
                 Object.keys(defaultContent).forEach(
-                  (k) => (localLangObj[lang][k] = '')
+                  (k) => (localLangObj[lang][k] = "")
                 );
                 let transSourceObj: any = null;
-                let message = '';
+                let message = "";
                 const llmRes = await Utils.getTransSourceObjByLlm(
                   localLangObj,
                   defaultLang,
@@ -1157,23 +1157,23 @@ export async function activate(context: vscode.ExtensionContext) {
                 if (transSourceObj && transSourceObj[lang]) {
                   const mapped: any = {};
                   Object.entries(defaultContent).forEach(([k, v]: any) => {
-                    mapped[k] = transSourceObj[lang][v] || '';
+                    mapped[k] = transSourceObj[lang][v] || "";
                   });
                   const targetDir = path.dirname(fsPathMap[defaultLang]);
                   const targetPath = path.join(targetDir, `${lang}.json`);
                   fs.writeFileSync(
                     targetPath,
-                    JSON.stringify(mapped, null, '\t'),
-                    'utf-8'
+                    JSON.stringify(mapped, null, "\t"),
+                    "utf-8"
                   );
                   created++;
                 } else {
                   Message.showMessage(
-                    `生成 ${lang}.json 失败: ${message || '无结果'}`
+                    `生成 ${lang}.json 失败: ${message || "无结果"}`
                   );
                 }
               } catch (e: any) {
-                console.error('generate lang error', lang, e);
+                console.error("generate lang error", lang, e);
                 Message.showMessage(`生成 ${lang}.json 异常`);
               } finally {
                 statusBar.text = `$(sync~spin) 生成缺失语言 ${i + 1}/${
@@ -1190,8 +1190,8 @@ export async function activate(context: vscode.ExtensionContext) {
                 : MessageType.WARNING
             );
           } catch (e) {
-            console.error('generateMissingLangFiles error', e);
-            Message.showMessage('生成缺失语言失败');
+            console.error("generateMissingLangFiles error", e);
+            Message.showMessage("生成缺失语言失败");
           }
         }
       )
@@ -1204,7 +1204,7 @@ export async function activate(context: vscode.ExtensionContext) {
       },
     });
   } catch (e) {
-    console.error('du-i18n activate error', e);
+    console.error("du-i18n activate error", e);
   }
 }
 
