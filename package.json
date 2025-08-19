@@ -55,7 +55,12 @@
   ],
   "icon": "public/logo.png",
   "activationEvents": [
-    "*"
+    "onLanguage:javascript",
+    "onLanguage:typescript",
+    "onLanguage:javascriptreact",
+    "onLanguage:typescriptreact",
+    "onLanguage:vue",
+    "onLanguage:json"
   ],
   "main": "./dist/extension.js",
   "contributes": {
