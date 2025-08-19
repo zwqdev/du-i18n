@@ -1,9 +1,10 @@
-import * as vscode from 'vscode';
-import { API } from './api';
-import { FileIO } from './fileIO';
-const fs = require('fs');
-const path = require('path');
-const isEmpty = require('lodash/isEmpty');
+import * as vscode from "vscode";
+import { API } from "./api";
+import { FileIO } from "./fileIO";
+import * as fs from "fs";
+import * as path from "path";
+import { isEmpty } from "lodash";
+import * as micromatch from "micromatch";
 
 export class Config {
   private configFilePath: string;
@@ -50,25 +51,25 @@ export class Config {
   constructor(props: any = {}) {
     // 默认将配置文件放在工作区的 .vscode 目录
     this.configFilePath = `/.vscode/yz-i18n.config.json`; // yz-i18n配置文件（相对工作区根目录）
-    this.projectName = ''; // deyi项目名称
-    this.projectShortName = ''; // deyi项目简称
-    this.onlineApiUrl = ''; // 地址url
-    this.version = ''; // deyi版本
-    this.langPaths = '**/src/locales/**'; // 语言文件路径
-    this.transSourcePaths = '**/src/locales/source/**'; // 翻译源文件路径
-    this.tempPaths = '**/src/locales/temp/**'; // 新增翻译文案路径
-    this.tempFileName = ''; // 指定生成json文件名
-    this.localLangFilePath = '/.language.md'; // 拉取远程语言保存本地文件路径
-    this.missCheckResultPath = '/.languageMissLocal.md'; // 翻译漏检本地文件路径
-    this.languageMissOnlinePath = '/.languageMissOnline.md'; // 翻译漏检本地文件路径
+    this.projectName = ""; // deyi项目名称
+    this.projectShortName = ""; // deyi项目简称
+    this.onlineApiUrl = ""; // 地址url
+    this.version = ""; // deyi版本
+    this.langPaths = "**/src/locales/**"; // 语言文件路径
+    this.transSourcePaths = "**/src/locales/source/**"; // 翻译源文件路径
+    this.tempPaths = "**/src/locales/temp/**"; // 新增翻译文案路径
+    this.tempFileName = ""; // 指定生成json文件名
+    this.localLangFilePath = "/.language.md"; // 拉取远程语言保存本地文件路径
+    this.missCheckResultPath = "/.languageMissLocal.md"; // 翻译漏检本地文件路径
+    this.languageMissOnlinePath = "/.languageMissOnline.md"; // 翻译漏检本地文件路径
     this.localLangObj = {}; // 本地语言数据
     this.onlineLangObj = {}; // 线上语言数据
     this.transSourceObj = {}; // key为中文的翻译源文案
-    this.multiFolders = ['src', 'pages']; // 复杂文件夹
-    this.defaultLang = 'zh'; // 默认语言
+    this.multiFolders = ["src", "pages"]; // 复杂文件夹
+    this.defaultLang = "zh"; // 默认语言
     this.pullLangs = []; // 指定翻译扩展的语言，优先级比tempLangs高，远程不允许覆盖
-    this.tempLangs = ['zh', 'en', 'ko', 'ru']; // 翻译扩展语言，远程的会覆盖
-    this.quoteKeys = ['$t', 'i18n.global.t']; // 引用key
+    this.tempLangs = ["zh", "en", "ko", "ru"]; // 翻译扩展语言，远程的会覆盖
+    this.quoteKeys = ["$t", "i18n.global.t"]; // 引用key
     this.keyBoundaryChars = []; // 引用key的边界字符
     this.bigFileLineCount = 1000; // 大文件行数
     this.isOverWriteLocal = false; // 是否覆盖本地已填写的翻译
@@ -78,19 +79,19 @@ export class Config {
     this.prefixKey = null; // key前缀
     this.keyJoinStr = null; // key连接符
 
-    this.hookImport = ''; // 是否需要hook引入i18n
+    this.hookImport = ""; // 是否需要hook引入i18n
 
     this.isOnlineTrans = true; // 本地-是否支持在线翻译
-    this.baiduAppid = 'xxx'; // 百度翻译appid
-    this.baiduSecrectKey = 'xxx'; // 百度翻译密钥
+    this.baiduAppid = "xxx"; // 百度翻译appid
+    this.baiduSecrectKey = "xxx"; // 百度翻译密钥
 
     this.fileReg = /\.(ts|js|tsx|jsx|vue|html|mpx)$/; // 识别的文件
     this.jsonReg = /\.(json)$/; // json文件
     this.isLogin = false; // 登录状态
-    this.gjUserName = 'yz_admin'; // 用户名
-    this.gjPassword = 'yz123456'; // 密码
+    this.gjUserName = "yz_admin"; // 用户名
+    this.gjPassword = "yz123456"; // 密码
     this.transBatchSize = 10; // 默认翻译批次大小
-    this.scanIgnoreGlobs = []; // 默认无忽略
+    this.scanIgnoreGlobs = ["*.js", "*.ts"]; // 默认无忽略
     this.scanIgnoreRegexes = [];
   }
   async readConfig() {
@@ -133,8 +134,8 @@ export class Config {
         hookImport,
         transBatchSize,
         scanIgnoreGlobs,
-        gjUserName = 'yz_admin',
-        gjPassword = 'yz123456',
+        gjUserName = "yz_admin",
+        gjPassword = "yz123456",
       } = config || {};
       this.projectName = projectName;
       this.projectShortName = projectShortName;
@@ -165,25 +166,25 @@ export class Config {
           ? uncheckMissKeys
           : [];
       this.isNeedRandSuffix =
-        typeof isNeedRandSuffix === 'boolean'
+        typeof isNeedRandSuffix === "boolean"
           ? isNeedRandSuffix
           : this.isNeedRandSuffix;
       this.langPaths = langPaths || this.langPaths;
       this.isSingleQuote =
-        typeof isSingleQuote === 'boolean' ? isSingleQuote : this.isSingleQuote;
+        typeof isSingleQuote === "boolean" ? isSingleQuote : this.isSingleQuote;
       this.isOnlineTrans =
-        typeof isOnlineTrans === 'boolean' ? isOnlineTrans : this.isOnlineTrans;
+        typeof isOnlineTrans === "boolean" ? isOnlineTrans : this.isOnlineTrans;
       this.baiduAppid = baiduAppid;
       this.baiduSecrectKey = baiduSecrectKey;
-      this.prefixKey = typeof prefixKey === 'string' ? prefixKey : null;
-      this.keyJoinStr = typeof keyJoinStr === 'string' ? keyJoinStr : null;
-      this.hookImport = hookImport || '';
-      if (typeof transBatchSize === 'number' && transBatchSize > 0) {
+      this.prefixKey = typeof prefixKey === "string" ? prefixKey : null;
+      this.keyJoinStr = typeof keyJoinStr === "string" ? keyJoinStr : null;
+      this.hookImport = hookImport || "";
+      if (typeof transBatchSize === "number" && transBatchSize > 0) {
         this.transBatchSize = transBatchSize;
       }
       if (Array.isArray(scanIgnoreGlobs)) {
         this.scanIgnoreGlobs = scanIgnoreGlobs.filter(
-          (g) => typeof g === 'string'
+          (g) => typeof g === "string"
         );
         this.compileScanIgnoreRegexes();
       }
@@ -194,21 +195,21 @@ export class Config {
 
     try {
       if (fs.existsSync(configAbsPath)) {
-        const data = fs.readFileSync(configAbsPath, 'utf-8');
+        const data = fs.readFileSync(configAbsPath, "utf-8");
         if (data) applyConfig(eval(`(${data})`));
         return; // 已读取 .vscode 下配置
       }
     } catch (e) {
-      console.error('read .vscode config error', e);
+      console.error("read .vscode config error", e);
     }
 
     // 兼容旧路径：在工作区内查找 yz-i18n.config.json（排除 .vscode 目录）
-    const files = await FileIO.getFiles('**/yz-i18n.config.json');
+    const files = await FileIO.getFiles("**/yz-i18n.config.json");
     files.forEach(({ fsPath }) => {
       const fileName = path.basename(fsPath);
       if (/\.(json)$/.test(fileName)) {
         try {
-          const data = fs.readFileSync(fsPath, 'utf-8');
+          const data = fs.readFileSync(fsPath, "utf-8");
           if (data) applyConfig(eval(`(${data})`));
         } catch (e) {
           console.error(e);
@@ -225,49 +226,39 @@ export class Config {
     return this.scanIgnoreGlobs;
   }
 
+  // Use micromatch to convert glob patterns to regular expressions reliably
+  // (handles **, *, ?, character classes, extglobs, etc.)
   private globToRegex(glob: string): RegExp {
-    // 简单转换: 支持 **, *, ?
-    const esc = (s: string) => s.replace(/[.+^${}()|\[\]\\]/g, '\\$&');
-    let pattern = '';
-    let i = 0;
-    while (i < glob.length) {
-      const c = glob[i];
-      if (c === '*') {
-        if (glob[i + 1] === '*') {
-          pattern += '.*';
-          i += 2;
-        } else {
-          pattern += '[^/]*';
-          i += 1;
-        }
-      } else if (c === '?') {
-        pattern += '.';
-        i += 1;
-      } else {
-        pattern += esc(c);
-        i += 1;
-      }
-    }
-    return new RegExp('^' + pattern + '$');
+    return micromatch.makeRe(glob);
   }
 
   private compileScanIgnoreRegexes() {
+    // Keep for backward compatibility if somewhere still references scanIgnoreRegexes
     this.scanIgnoreRegexes = this.scanIgnoreGlobs.map((g) =>
-      this.globToRegex(g.trim())
+      this.globToRegex(g)
     );
   }
 
   isScanIgnored(filePath: string) {
-    if (!this.scanIgnoreRegexes.length) return false;
+    if (!Array.isArray(this.scanIgnoreGlobs) || !this.scanIgnoreGlobs.length) {
+      return false;
+    }
     try {
       const folders = vscode.workspace.workspaceFolders;
-      const root = folders && folders.length ? folders[0].uri.fsPath : '';
+      const root = folders && folders.length ? folders[0].uri.fsPath : "";
       let rel =
         root && filePath.startsWith(root)
           ? filePath.substring(root.length)
           : filePath;
-      rel = rel.replace(/\\/g, '/');
-      if (rel.startsWith('/')) rel = rel.substring(1);
+      rel = rel.replace(/\\/g, "/");
+      if (rel.startsWith("/")) rel = rel.substring(1);
+      // First attempt direct match with matchBase so '*.ts' matches any basename.
+      const matched = micromatch.isMatch(rel, this.scanIgnoreGlobs, {
+        dot: true,
+        matchBase: true,
+      });
+      if (matched) return true;
+      // Fallback: test compiled regexes (legacy path)
       return this.scanIgnoreRegexes.some((r) => r.test(rel));
     } catch (e) {
       return false;
@@ -361,9 +352,9 @@ export class Config {
 
   getQuoteKeysStr() {
     if (Array.isArray(this.quoteKeys) && this.quoteKeys.length) {
-      return this.quoteKeys.join(',');
+      return this.quoteKeys.join(",");
     }
-    return '';
+    return "";
   }
 
   getKeyBoundaryChars() {
@@ -448,7 +439,7 @@ export class Config {
     };
   }
 
-  getCurLangObj(userKey: string = '') {
+  getCurLangObj(userKey: string = "") {
     const lang = userKey || this.getDefaultLang();
     const langObj = this.isOnline() ? this.onlineLangObj : this.localLangObj;
     return langObj[lang];
@@ -462,7 +453,7 @@ export class Config {
           const fileName = path.basename(fsPath);
           if (/\.(json)$/.test(fileName)) {
             try {
-              const data = fs.readFileSync(fsPath, 'utf-8');
+              const data = fs.readFileSync(fsPath, "utf-8");
               if (data) {
                 const langObj = eval(`(${data})`);
                 if (!isEmpty(langObj)) {
@@ -489,9 +480,9 @@ export class Config {
         langFiles.forEach(({ fsPath }) => {
           const fileName = path.basename(fsPath);
           if (/\.(json)$/.test(fileName)) {
-            const lang = fileName.split('.')[0];
+            const lang = fileName.split(".")[0];
             try {
-              const data = fs.readFileSync(fsPath, 'utf-8');
+              const data = fs.readFileSync(fsPath, "utf-8");
               if (data) {
                 const langObj = eval(`(${data})`);
                 if (!isEmpty(langObj)) {
@@ -500,7 +491,7 @@ export class Config {
                   }
                   Object.entries(langObj).forEach(([k, v]) => {
                     this.localLangObj[lang][k] =
-                      v || this.localLangObj[lang][k] || '';
+                      v || this.localLangObj[lang][k] || "";
                   });
                 }
               }
@@ -511,14 +502,14 @@ export class Config {
         });
       }
     } catch (e) {
-      console.error('readLocalGlobalLangObj', e);
+      console.error("readLocalGlobalLangObj", e);
     }
   }
 
   async refreshGlobalLangObj(isAll: boolean = false) {
     if (this.isOnline()) {
       // 读取在线语言库
-      await this.getOnlineLanguage('', isAll);
+      await this.getOnlineLanguage("", isAll);
     } else {
       // 读取全局语言包
       await this.readLocalGlobalLangObj();
@@ -555,25 +546,25 @@ export class Config {
   checkProjectConfig() {
     if (!this.projectName) {
       vscode.window.showWarningMessage(
-        '请先在yz-i18n.config.json中配置得译平台对应的项目名称'
+        "请先在yz-i18n.config.json中配置得译平台对应的项目名称"
       );
       return false;
     }
     if (!this.projectShortName) {
       vscode.window.showWarningMessage(
-        '请先在yz-i18n.config.json中配置得译平台对应的项目简称'
+        "请先在yz-i18n.config.json中配置得译平台对应的项目简称"
       );
       return false;
     }
     if (!this.onlineApiUrl) {
       vscode.window.showWarningMessage(
-        '请先在yz-i18n.config.json中配置得译平台url请求地址'
+        "请先在yz-i18n.config.json中配置得译平台url请求地址"
       );
       return false;
     }
     if (!this.version) {
       vscode.window.showWarningMessage(
-        '请先在yz-i18n.config.json中配置得译平台对应项目的版本'
+        "请先在yz-i18n.config.json中配置得译平台对应项目的版本"
       );
       return false;
     }
@@ -589,10 +580,10 @@ export class Config {
     // console.log("files", files);
     files.forEach(({ fsPath }) => {
       const fileName = path.basename(fsPath);
-      const lang = fileName.split('.')[0];
+      const lang = fileName.split(".")[0];
       if (/\.(json)$/.test(fileName)) {
         inValidType = true;
-        const data = fs.readFileSync(fsPath, 'utf-8');
+        const data = fs.readFileSync(fsPath, "utf-8");
         if (data) {
           const obj = eval(`(${data})`);
           sourceData[lang] = {
@@ -625,7 +616,7 @@ export class Config {
     } else {
       // 本地
       if (!inValidType && isCheck) {
-        const pathName = this.transSourcePaths.replace(/\*/g, '');
+        const pathName = this.transSourcePaths.replace(/\*/g, "");
         vscode.window.showWarningMessage(
           `缺少翻译源文件，请先在${pathName}下配置翻译源文件，文件名是语言（如${pathName}CN-en.json）`
         );
@@ -641,7 +632,7 @@ export class Config {
    * @param type 类型 fileName|filePath
    * @returns
    */
-  async handleMissingDetection(type: string = 'fileName') {
+  async handleMissingDetection(type: string = "fileName") {
     let result = null;
     try {
       const files = await FileIO.getFiles(this.tempPaths);
@@ -652,7 +643,7 @@ export class Config {
         files.forEach(({ fsPath }) => {
           const fileName = path.basename(fsPath);
           if (/\.(json)$/.test(fileName)) {
-            const data = fs.readFileSync(fsPath, 'utf-8');
+            const data = fs.readFileSync(fsPath, "utf-8");
             if (data) {
               const langObj = eval(`(${data})`);
               if (!isEmpty(langObj)) {
@@ -673,7 +664,7 @@ export class Config {
                           }
                           newObj[defaultLang][k] = defaultLangObj[k];
                           newObj[lang][k] = v;
-                          if (type === 'fileName') {
+                          if (type === "fileName") {
                             defaultKeyObj[defaultLangObj[k]] =
                               defaultLangObj[k];
                           }
@@ -683,7 +674,7 @@ export class Config {
                   }
                 });
                 if (!isEmpty(newObj)) {
-                  if (type === 'fileName') {
+                  if (type === "fileName") {
                     result[fileName] = newObj;
                   } else {
                     result[fsPath] = newObj;
@@ -694,12 +685,12 @@ export class Config {
           }
         });
 
-        if (!isEmpty(defaultKeyObj) && type === 'fileName') {
-          result['missTranslateKeys'] = Object.keys(defaultKeyObj);
+        if (!isEmpty(defaultKeyObj) && type === "fileName") {
+          result["missTranslateKeys"] = Object.keys(defaultKeyObj);
         }
       }
     } catch (e) {
-      console.error('handleMissingDetection', e);
+      console.error("handleMissingDetection", e);
     }
     return result;
   }
@@ -713,8 +704,8 @@ export class Config {
    */
   generatePageEnName(filePath: string) {
     try {
-      if (FileIO.isIncludePath(filePath, 'src/components/')) {
-        return 'src-components';
+      if (FileIO.isIncludePath(filePath, "src/components/")) {
+        return "src-components";
       } else {
         let dirName = path.dirname(filePath);
         let curDir = dirName.split(path.sep).slice(-1)[0];
@@ -729,25 +720,25 @@ export class Config {
         return lastDir;
       }
     } catch (e) {
-      console.log('generatePageEnName', e);
+      console.log("generatePageEnName", e);
     }
-    return '';
+    return "";
   }
 
   getBasePrefix(pageEnName: string) {
     if (this.projectShortName && pageEnName) {
       return `${this.projectShortName}_${pageEnName}_`;
     }
-    return '';
+    return "";
   }
 
-  getKeyPrefix(filePath: string, index: string = '') {
+  getKeyPrefix(filePath: string, index: string = "") {
     let dirName = path.dirname(filePath);
     dirName = dirName.split(path.sep).slice(-1)[0];
     let fileName = path.basename(filePath);
-    fileName = fileName.split('.')[0];
+    fileName = fileName.split(".")[0];
     let key =
-      typeof this.prefixKey === 'string'
+      typeof this.prefixKey === "string"
         ? this.prefixKey
         : this.keyJoinStr !== null
         ? `${dirName}${this.keyJoinStr}${fileName}`
@@ -759,7 +750,7 @@ export class Config {
       : `${key}.${rand}${rand2}-`;
   }
 
-  getPrefixKey(fsPath: string, index: string = '') {
+  getPrefixKey(fsPath: string, index: string = "") {
     const pageEnName = this.generatePageEnName(fsPath);
     const basePrefix = this.getBasePrefix(pageEnName);
     const secondPrefix = this.getKeyPrefix(fsPath, index);
@@ -786,7 +777,7 @@ export class Config {
       const unTranslateLangObj = {};
       const fromLangObj = sourceLangObj[fromLang];
       if (isEmpty(fromLangObj)) {
-        throw new Error('数据异常');
+        throw new Error("数据异常");
       }
       const toLangObj = sourceLangObj[toLang] || {};
       const fromLangMap = {};
@@ -796,7 +787,7 @@ export class Config {
       Object.entries(fromLangObj).forEach(([fromK, fromV]) => {
         if (!toLangObj[fromK]) {
           fromLangMap[fromK] = fromV;
-          toLangMap[fromK] = '';
+          toLangMap[fromK] = "";
         }
       });
       unTranslateLangObj[fromLang] = fromLangMap;
@@ -810,7 +801,7 @@ export class Config {
 
   // 同步单个本地temp文件的文案到deyi平台
   async handleSyncTempFileToOnline(fsPath: string, cb: Function) {
-    const pathName = (this.tempPaths || '').replace(/\*/g, '');
+    const pathName = (this.tempPaths || "").replace(/\*/g, "");
     if (
       pathName &&
       fsPath &&
@@ -819,13 +810,13 @@ export class Config {
     ) {
       const fileName = path.basename(fsPath);
       // 命名规范
-      let pageEnName = fileName.split('_')[0];
+      let pageEnName = fileName.split("_")[0];
       if (/\.(json)$/.test(fileName)) {
-        if (pageEnName.includes('.json')) {
-          pageEnName = pageEnName.replace('.json', '');
+        if (pageEnName.includes(".json")) {
+          pageEnName = pageEnName.replace(".json", "");
         }
         try {
-          const data = fs.readFileSync(fsPath, 'utf-8');
+          const data = fs.readFileSync(fsPath, "utf-8");
           if (data) {
             const i18nLangObj = eval(`(${data})`);
             this.handleSendToOnline(i18nLangObj, pageEnName, cb);
@@ -853,13 +844,13 @@ export class Config {
       files.forEach(({ fsPath }) => {
         const fileName = path.basename(fsPath);
         // 命名规范
-        let pageEnName = fileName.split('_')[0];
+        let pageEnName = fileName.split("_")[0];
         if (/\.(json)$/.test(fileName)) {
-          if (pageEnName.includes('.json')) {
-            pageEnName = pageEnName.replace('.json', '');
+          if (pageEnName.includes(".json")) {
+            pageEnName = pageEnName.replace(".json", "");
           }
           try {
-            const data = fs.readFileSync(fsPath, 'utf-8');
+            const data = fs.readFileSync(fsPath, "utf-8");
             if (data) {
               const i18nLangObj = eval(`(${data})`);
               this.handleSendToOnline(i18nLangObj, pageEnName, cb);
@@ -917,7 +908,7 @@ export class Config {
             }
           });
           params.items = items;
-          console.log('params', params);
+          console.log("params", params);
           this.handleUploadWords(params, () => {
             cb();
           });
@@ -940,20 +931,20 @@ export class Config {
         if (itemList.length && this.onlineApiUrl) {
           // console.log("itemList", itemList);
           const taskList = itemList.reduce((pre, cur, i) => {
-            let url = this.onlineApiUrl + '/batch-add';
+            let url = this.onlineApiUrl + "/batch-add";
             const newParams = {
               ...params,
               items: cur || [],
             };
-            const task = this.request(url, newParams, 'post');
+            const task = this.request(url, newParams, "post");
             pre.push(task);
             return pre;
           }, []);
           const res = await Promise.all(taskList);
-          console.log('res1', res);
+          console.log("res1", res);
           const res2: any = await this.queryPageWords(params.pageEnName);
           if (res2.code === 200 && res2.data) {
-            console.log('res2', res2);
+            console.log("res2", res2);
             if (Array.isArray(res2.data)) {
               const { content } = res2.data[0] || {};
               cb(content);
@@ -975,7 +966,7 @@ export class Config {
       items: [],
     };
     if (this.projectName && pageEnName && this.onlineApiUrl) {
-      const url = this.onlineApiUrl + '/query-by-page';
+      const url = this.onlineApiUrl + "/query-by-page";
       const res = await this.request(url, params);
       return res;
     }
@@ -993,14 +984,14 @@ export class Config {
       };
       // console.log('queryLangWords', this.projectName, this.onlineApiUrl);
       if (this.projectName && this.onlineApiUrl) {
-        const url = this.onlineApiUrl + '/query-by-package';
+        const url = this.onlineApiUrl + "/query-by-package";
         // console.log("url", url);
         const { data = null }: any = await this.request(url, params);
-        console.log('data', data);
+        console.log("data", data);
         if (data) {
           // 默认拉取所有语言，用户也可配置拉取制定的语言集合this.pullLangs
           if (isInit && Array.isArray(data.areaLangs)) {
-            console.log('data.areaLangs', data.areaLangs);
+            console.log("data.areaLangs", data.areaLangs);
             // 重新设置语言keys
             this.tempLangs = data.areaLangs.map((item) => item.code);
             if (isAll) {
@@ -1034,23 +1025,23 @@ export class Config {
     await requestSingleLang(lang, true);
   }
 
-  async getOnlineLanguage(lang: string = '', isAll = false) {
+  async getOnlineLanguage(lang: string = "", isAll = false) {
     const areaLang = lang || this.defaultLang;
     await this.queryLangWords(areaLang, isAll);
   }
 
-  request(url, params, method = 'get') {
+  request(url, params, method = "get") {
     // return new Promise((resolve, reject) => {
     //   resolve(null);
     // });
     return new Promise((resolve, reject) => {
-      if (method === 'get') {
+      if (method === "get") {
         API.GET(url, params)
           .then((res) => {
             resolve(res);
           })
           .catch((e) => {
-            console.log('e', e);
+            console.log("e", e);
             reject(e);
           });
       } else {
@@ -1059,7 +1050,7 @@ export class Config {
             resolve(res);
           })
           .catch((e) => {
-            console.log('e', e);
+            console.log("e", e);
             reject(e);
           });
       }

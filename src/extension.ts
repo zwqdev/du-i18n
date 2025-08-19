@@ -181,7 +181,6 @@ export async function activate(context: vscode.ExtensionContext) {
 
             FileIO.getFolderFiles(folderPath)
               .then(async (files: any[]) => {
-                console.log("files", files);
                 const validFiles = files.filter(
                   (f: string) => !config.isScanIgnored(f)
                 );
