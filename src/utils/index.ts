@@ -892,8 +892,9 @@ export class Utils {
                 .join('|')})\\(`
             )
           : /\b__never_match__\b/; // 无配置时永远不匹配
+        let tplIndex = 0; // local counter for tpl keys
         const allocateKeyLocal = (val: string) => {
-          const idx = foundList.filter((k) => k.startsWith('__TPL__')).length; // 临时计数模板内 key 数
+          const idx = tplIndex++;
           foundList.push(`__TPL__${val}`); // 用特殊前缀占位，后面统一转换
           return `${ctx.prefixKey}tpl.${idx}`;
         };
@@ -906,10 +907,8 @@ export class Utils {
                 const raw = node.content as string;
                 if (raw && Utils._containsChinese(raw)) {
                   const trimmed = raw.trim();
-                  // 已含翻译函数调用则跳过
                   if (!translateCallReg.test(trimmed)) {
                     const key = allocateKeyLocal(trimmed);
-                    // 保留原始前后空白
                     const leading = raw.match(/^[ \t\n\r]*/)[0];
                     const trailing = raw.match(/[ \t\n\r]*$/)[0];
                     const replacement = `${leading}{{ ${primaryFn}('${key}') }}${trailing}`;
@@ -923,14 +922,10 @@ export class Utils {
                 break;
               }
               case NodeTypes.ELEMENT: {
-                // 跳过 <script> / <style>（内部中文由脚本或样式处理，不在模板提取范围）
-                if (node.tag && /^(script|style)$/i.test(node.tag)) {
-                  break;
-                }
-                // 静态属性中文 -> 绑定
+                if (node.tag && /^(script|style)$/i.test(node.tag)) break;
                 if (Array.isArray(node.props)) {
                   node.props.forEach((prop: any) => {
-                    // ATTRIBUTE type = 6
+                    // ATTRIBUTE
                     if (
                       prop.type === NodeTypes.ATTRIBUTE &&
                       prop.value &&
@@ -943,7 +938,6 @@ export class Utils {
                         const attrStart = prop.loc.start.offset;
                         const attrEnd = prop.loc.end.offset;
                         const attrName = prop.name;
-                        // 用绑定替换整个属性
                         const replacement = `:${attrName}="${primaryFn}('${key}')"`;
                         replacements.push({
                           start: attrStart,
@@ -953,19 +947,125 @@ export class Utils {
                       }
                     }
 
-                    // DIRECTIVE type = 7 -> 处理 :class / v-bind 及其他指令中的一层字符串字面量
+                    // DIRECTIVE
                     if (
                       prop.type === NodeTypes.DIRECTIVE &&
                       prop.exp &&
                       prop.exp.content
                     ) {
-                      try {
-                        const exp = prop.exp.content;
-                        if (
-                          !translateCallReg.test(exp) &&
-                          Utils._containsChinese(exp)
-                        ) {
-                          // 替换表达式内的字符串字面量（第一层），如数组 ['按钮组', isActive ? '激活' : '未激活']
+                      const exp = prop.exp.content;
+                      if (
+                        !translateCallReg.test(exp) &&
+                        Utils._containsChinese(exp)
+                      ) {
+                        let processed = false;
+                        try {
+                          const plugins = [
+                            'classProperties',
+                            'dynamicImport',
+                            'optionalChaining',
+                            'jsx',
+                            'typescript',
+                            'decorators-legacy',
+                          ];
+                          let exprAst: any = null;
+                          try {
+                            if ((babelParser as any).parseExpression) {
+                              exprAst = (babelParser as any).parseExpression(
+                                exp,
+                                { plugins, sourceType: 'module' }
+                              );
+                            } else {
+                              exprAst = (babelParser as any).parse(
+                                '(' + exp + ')',
+                                {
+                                  plugins: plugins as any,
+                                  sourceType: 'module',
+                                }
+                              ).program.body[0].expression as any;
+                            }
+                          } catch (e) {
+                            exprAst = null;
+                          }
+
+                          let modified = false;
+                          if (exprAst) {
+                            if (t.isArrayExpression(exprAst)) {
+                              exprAst.elements = exprAst.elements.map(
+                                (el: any) => {
+                                  if (
+                                    t.isStringLiteral(el) &&
+                                    Utils._containsChinese(el.value)
+                                  ) {
+                                    const key = allocateKeyLocal(
+                                      el.value.trim()
+                                    );
+                                    modified = true;
+                                    return t.callExpression(
+                                      Utils._buildCallee(primaryFn),
+                                      [t.stringLiteral(key)]
+                                    );
+                                  }
+                                  return el;
+                                }
+                              );
+                            }
+                            if (t.isConditionalExpression(exprAst)) {
+                              const ce = exprAst;
+                              if (
+                                t.isStringLiteral(ce.consequent) &&
+                                Utils._containsChinese(ce.consequent.value)
+                              ) {
+                                const key = allocateKeyLocal(
+                                  ce.consequent.value.trim()
+                                );
+                                ce.consequent = t.callExpression(
+                                  Utils._buildCallee(primaryFn),
+                                  [t.stringLiteral(key)]
+                                );
+                                modified = true;
+                              }
+                              if (
+                                t.isStringLiteral(ce.alternate) &&
+                                Utils._containsChinese(ce.alternate.value)
+                              ) {
+                                const key = allocateKeyLocal(
+                                  ce.alternate.value.trim()
+                                );
+                                ce.alternate = t.callExpression(
+                                  Utils._buildCallee(primaryFn),
+                                  [t.stringLiteral(key)]
+                                );
+                                modified = true;
+                              }
+                            }
+
+                            if (modified) {
+                              const generated = generate(exprAst).code;
+                              const argName =
+                                prop.arg &&
+                                prop.arg.type === NodeTypes.SIMPLE_EXPRESSION &&
+                                prop.arg.content
+                                  ? prop.arg.content
+                                  : null;
+                              const attrStart = prop.loc.start.offset;
+                              const attrEnd = prop.loc.end.offset;
+                              const replacement = argName
+                                ? `:${argName}="${generated}"`
+                                : generated;
+                              replacements.push({
+                                start: attrStart,
+                                end: attrEnd,
+                                text: replacement,
+                              });
+                              processed = true;
+                            }
+                          }
+                        } catch (e) {
+                          // fall through to fallback
+                        }
+
+                        if (!processed) {
                           const replaced = exp.replace(
                             /(['"`])([\s\S]*?)\1/g,
                             (m: string, q: string, inner: string) => {
@@ -985,7 +1085,6 @@ export class Utils {
                                 : null;
                             const attrStart = prop.loc.start.offset;
                             const attrEnd = prop.loc.end.offset;
-                            // 若有 arg（:class），使用 :arg="..." 否则直接替换指令文本
                             const replacement = argName
                               ? `:${argName}="${replaced}"`
                               : replaced;
@@ -996,8 +1095,6 @@ export class Utils {
                             });
                           }
                         }
-                      } catch (e) {
-                        // ignore
                       }
                     }
                   });
@@ -1007,12 +1104,7 @@ export class Utils {
                 break;
               }
               case NodeTypes.INTERPOLATION: {
-                // 处理简单插值：直接字符串或三元表达式（第一层）
                 try {
-                  const raw = code.slice(
-                    node.loc.start.offset,
-                    node.loc.end.offset
-                  );
                   const val =
                     node.content && node.content.content
                       ? node.content.content
@@ -1021,36 +1113,71 @@ export class Utils {
                     Utils._containsChinese(val) &&
                     !translateCallReg.test(val)
                   ) {
-                    // 尝试匹配三元表达式： condition ? a : b
-                    const ternaryMatch = val.match(/^(.*)\?(.*):(.*)$/s);
-                    if (ternaryMatch) {
-                      const cond = ternaryMatch[1].trim();
-                      const a = ternaryMatch[2].trim();
-                      const b = ternaryMatch[3].trim();
-                      const unwrap = (s: string) =>
-                        s.replace(/^\s*['"`]?|['"`]?\s*$/g, '').trim();
-                      const aRaw = unwrap(a);
-                      const bRaw = unwrap(b);
-                      const aHas = Utils._containsChinese(aRaw);
-                      const bHas = Utils._containsChinese(bRaw);
-                      let newA = a;
-                      let newB = b;
-                      if (aHas) {
-                        const keyA = allocateKeyLocal(aRaw);
-                        newA = `${primaryFn}('${keyA}')`;
+                    let processed = false;
+                    try {
+                      const plugins = [
+                        'classProperties',
+                        'dynamicImport',
+                        'optionalChaining',
+                        'jsx',
+                        'typescript',
+                        'decorators-legacy',
+                      ];
+                      let exprAst: any = null;
+                      if ((babelParser as any).parseExpression) {
+                        exprAst = (babelParser as any).parseExpression(val, {
+                          plugins,
+                          sourceType: 'module',
+                        });
+                      } else {
+                        exprAst = (babelParser as any).parse('(' + val + ')', {
+                          plugins: plugins as any,
+                          sourceType: 'module',
+                        }).program.body[0].expression as any;
                       }
-                      if (bHas) {
-                        const keyB = allocateKeyLocal(bRaw);
-                        newB = `${primaryFn}('${keyB}')`;
+                      if (exprAst && t.isConditionalExpression(exprAst)) {
+                        const ce = exprAst;
+                        let modified = false;
+                        if (
+                          t.isStringLiteral(ce.consequent) &&
+                          Utils._containsChinese(ce.consequent.value)
+                        ) {
+                          const keyA = allocateKeyLocal(
+                            ce.consequent.value.trim()
+                          );
+                          ce.consequent = t.callExpression(
+                            Utils._buildCallee(primaryFn),
+                            [t.stringLiteral(keyA)]
+                          );
+                          modified = true;
+                        }
+                        if (
+                          t.isStringLiteral(ce.alternate) &&
+                          Utils._containsChinese(ce.alternate.value)
+                        ) {
+                          const keyB = allocateKeyLocal(
+                            ce.alternate.value.trim()
+                          );
+                          ce.alternate = t.callExpression(
+                            Utils._buildCallee(primaryFn),
+                            [t.stringLiteral(keyB)]
+                          );
+                          modified = true;
+                        }
+                        if (modified) {
+                          const generated = generate(exprAst).code;
+                          const start = node.loc.start.offset;
+                          const end = node.loc.end.offset;
+                          const text = `{{ ${generated} }}`;
+                          replacements.push({ start, end, text });
+                          processed = true;
+                        }
                       }
-                      if (aHas || bHas) {
-                        const start = node.loc.start.offset;
-                        const end = node.loc.end.offset;
-                        const text = `{{ ${cond} ? ${newA} : ${newB} }}`;
-                        replacements.push({ start, end, text });
-                      }
-                    } else {
-                      // 整体作为字符串处理（回退）
+                    } catch (e) {
+                      // ignore parse error
+                    }
+
+                    if (!processed) {
                       const key = allocateKeyLocal(val.trim());
                       const start = node.loc.start.offset;
                       const end = node.loc.end.offset;
@@ -1059,7 +1186,7 @@ export class Utils {
                     }
                   }
                 } catch (e) {
-                  // ignore parse issues
+                  // ignore
                 }
                 break;
               }
