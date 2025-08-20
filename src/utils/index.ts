@@ -371,8 +371,8 @@ export class Utils {
     defaultLang: string,
     initLang: string[],
     keyPrefix: string,
-  varObj: any,
-  startingIndex: number = 0 // 新增：当文件中已存在旧 key 时的起始偏移
+    varObj: any,
+    startingIndex: number = 0 // 新增：当文件中已存在旧 key 时的起始偏移
   ) {
     let langObj = {};
     if (keys.length) {
@@ -383,7 +383,7 @@ export class Utils {
         langObj[lang] = {};
       });
       (keys || []).filter(Boolean).forEach((char, i) => {
-    const key = `${keyPrefix}${startingIndex + i}`;
+        const key = `${keyPrefix}${startingIndex + i}`;
         langObj[defaultLang][key] =
           (varObj && varObj[char] && varObj[char].newKey) || char;
         (initLang || []).forEach((lang) => {
@@ -865,6 +865,7 @@ export class Utils {
       let finalCode = code;
       const foundList: string[] = [];
       let vueVarObj: any = {};
+      let scriptReplaced = false; // 新增：是否对 <script>/<script setup> 做了替换
 
       // template AST 处理，替换正则方案
       if (descriptor.template && descriptor.template.content) {
@@ -1050,6 +1051,7 @@ export class Utils {
             }
             foundList.push(...found);
             vueVarObj = { ...vueVarObj, ...varObj };
+            scriptReplaced = true;
           }
         }
       );
@@ -1064,7 +1066,8 @@ export class Utils {
       }
 
       if (!foundList.length) return null;
-      if (ctx.hookImport)
+      // 仅当脚本块有实际替换（使用了脚本侧翻译函数）时才注入 hookImport，避免纯模板翻译产生多余 import
+      if (ctx.hookImport && scriptReplaced)
         finalCode = Utils.insertImports(finalCode, ctx.hookImport);
       FileIO.handleWriteStream(filePath, finalCode, () => {});
       const varObj: any = { ...vueVarObj, ...Utils.getVarObj(foundList) };
