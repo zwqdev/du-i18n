@@ -371,7 +371,8 @@ export class Utils {
     defaultLang: string,
     initLang: string[],
     keyPrefix: string,
-    varObj: any
+  varObj: any,
+  startingIndex: number = 0 // 新增：当文件中已存在旧 key 时的起始偏移
   ) {
     let langObj = {};
     if (keys.length) {
@@ -382,7 +383,7 @@ export class Utils {
         langObj[lang] = {};
       });
       (keys || []).filter(Boolean).forEach((char, i) => {
-        const key = `${keyPrefix}${i}`;
+    const key = `${keyPrefix}${startingIndex + i}`;
         langObj[defaultLang][key] =
           (varObj && varObj[char] && varObj[char].newKey) || char;
         (initLang || []).forEach((lang) => {
@@ -460,6 +461,19 @@ export class Utils {
 
       // 普通脚本 / JSX / TSX 处理
       if (/\.(js|ts|jsx|tsx)$/.test(filePath)) {
+        // 计算已存在的最大索引，避免重复 key（文件可能已部分翻译）
+        let keyOffset = 0;
+        try {
+          if (prefixKey) {
+            const escaped = prefixKey.replace(/([.*+?^${}()|[\]\\])/g, "\\$1");
+            const reg = new RegExp(`${escaped}(\\d+)`, "g");
+            let m: RegExpExecArray | null;
+            while ((m = reg.exec(code))) {
+              const n = parseInt(m[1], 10);
+              if (!isNaN(n) && n + 1 > keyOffset) keyOffset = n + 1;
+            }
+          }
+        } catch (e) {}
         const {
           code: outCode,
           found,
@@ -469,6 +483,7 @@ export class Utils {
           prefixKey,
           jsx: /\.(jsx|tsx)$/.test(filePath),
           skipExtractCallees: options.skipExtractCallees || [],
+          keyOffset,
         });
         if (!found.length) return null;
         FileIO.handleWriteStream(filePath, outCode, () => {});
@@ -477,7 +492,8 @@ export class Utils {
           defaultLang,
           initLang,
           prefixKey,
-          { ...varObj, ...Utils.getVarObj(found) }
+          { ...varObj, ...Utils.getVarObj(found) },
+          keyOffset
         );
       }
       return null; // 非支持类型
@@ -562,9 +578,16 @@ export class Utils {
       jsx?: boolean;
       forceTs?: boolean;
       skipExtractCallees?: string[];
+      keyOffset?: number; // 新增：全局 key 偏移（用于 Vue 模板已占用的条目数）
     }
   ): { code: string; found: string[]; varObj: any } {
-    const { quoteKeys, prefixKey, forceTs, skipExtractCallees = [] } = opts;
+    const {
+      quoteKeys,
+      prefixKey,
+      forceTs,
+      skipExtractCallees = [],
+      keyOffset = 0,
+    } = opts;
     // 收集需要忽略提取的行（含有 @i18n-ignore 标记的行，或紧随其后的下一行）
     const ignoreLineSet = new Set<number>();
     scriptContent.split(/\n/).forEach((line, idx) => {
@@ -605,9 +628,9 @@ export class Utils {
     const scriptCalleeName = quoteKeys[1] || "i18n.t";
     const jsxCalleeName = quoteKeys[0] || "$t";
     const allocateKey = (original: string) => {
-      const idx = found.length;
+      const idx = found.length; // 局部索引
       found.push(original);
-      return `${prefixKey}${idx}`;
+      return `${prefixKey}${keyOffset + idx}`; // 叠加偏移，确保与最终 foundList 全局序号一致
     };
 
     const replacements: Array<{ start: number; end: number; text: string }> =
@@ -1000,6 +1023,7 @@ export class Utils {
             jsx: filePath.endsWith(".tsx"),
             forceTs,
             skipExtractCallees: ctx.skipExtractCallees || [],
+            keyOffset: foundList.length, // 模板已加入的数量作为偏移
           });
           if (found.length) {
             // Find the blockContent occurrence starting from the block's start offset
