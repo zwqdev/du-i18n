@@ -132,36 +132,12 @@
           "group": "2_workspace@2"
         },
         {
-          "command": "extension.du.i18n.updateLocalToOnline",
-          "group": "2_workspace@3"
-        },
-        {
           "command": "extension.du.i18n.multiTranslateFromChineseKey",
           "group": "3_compare@5"
         },
         {
-          "command": "extension.du.i18n.batchUpdateLocalToOnline",
-          "group": "3_compare@16"
-        },
-        {
-          "command": "extension.du.i18n.updateLocalFromOnline",
-          "group": "4_search@18"
-        },
-        {
-          "command": "extension.du.i18n.missingDetection",
-          "group": "2_workspace@4"
-        },
-        {
-          "command": "extension.du.i18n.searchUntranslateText",
-          "group": "4_search@20"
-        },
-        {
           "command": "extension.du.i18n.mergeLangFile",
           "group": "5_cutcopypaste@21"
-        },
-        {
-          "command": "extension.du.i18n.splitLangFile",
-          "group": "5_cutcopypaste@25"
         },
         {
           "command": "extension.du.i18n.generateMissingLangFiles",
@@ -170,10 +146,6 @@
         {
           "command": "extension.du.i18n.updateLocalLangPackage",
           "group": "7_modification@8"
-        },
-        {
-          "command": "extension.du.i18n.analytics",
-          "group": "7_modification@10"
         },
         {
           "command": "extension.du.i18n.setting",
