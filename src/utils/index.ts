@@ -893,9 +893,9 @@ export class Utils {
             )
           : /\b__never_match__\b/; // 无配置时永远不匹配
         const allocateKeyLocal = (val: string) => {
-          const idx = foundList.length;
-          foundList.push(val);
-          return `${ctx.prefixKey}${idx}`;
+          const idx = foundList.filter((k) => k.startsWith("__TPL__")).length; // 临时计数模板内 key 数
+          foundList.push(`__TPL__${val}`); // 用特殊前缀占位，后面统一转换
+          return `${ctx.prefixKey}tpl.${idx}`;
         };
         const traverseNodes = (children: any[]) => {
           if (!Array.isArray(children)) return;
@@ -1024,7 +1024,8 @@ export class Utils {
             jsx: filePath.endsWith(".tsx"),
             forceTs,
             skipExtractCallees: ctx.skipExtractCallees || [],
-            keyOffset: foundList.length, // 模板已加入的数量作为偏移
+            // 仅统计模板部分数量（去除脚本已加入的数量），模板部分用 __TPL__ 标记，不计入脚本偏移
+            keyOffset: foundList.filter((k) => k.startsWith("__TPL__")).length,
           });
           if (found.length) {
             // Find the blockContent occurrence starting from the block's start offset
@@ -1049,7 +1050,9 @@ export class Utils {
                 });
               }
             }
-            foundList.push(...found);
+            found.forEach((f) => {
+              foundList.push(`__SCRIPT__${f}`);
+            });
             vueVarObj = { ...vueVarObj, ...varObj };
             scriptReplaced = true;
           }
@@ -1066,18 +1069,66 @@ export class Utils {
       }
 
       if (!foundList.length) return null;
-      // 仅当脚本块有实际替换（使用了脚本侧翻译函数）时才注入 hookImport，避免纯模板翻译产生多余 import
-      if (ctx.hookImport && scriptReplaced)
-        finalCode = Utils.insertImports(finalCode, ctx.hookImport);
+      // 更宽松的 import 注入策略：
+      // 1) 只要生成了 key 或检测到翻译函数调用
+      // 2) 未已存在相同导入
+      if (ctx.hookImport && !finalCode.includes(ctx.hookImport)) {
+        const hasCall =
+          /\$t\(['"]/g.test(finalCode) ||
+          /\bi18n\.t\(/.test(finalCode) ||
+          /\bi18n\.global\.t\(/.test(finalCode);
+        if (scriptReplaced || hasCall || foundList.length > 0) {
+          // Vue: 优先插入到 <script setup> 或 <script> 标签内部首行，避免跑到 <template> 之前
+          const scriptTagReg = /<script[^>]*setup[^>]*>/i;
+          const normalScriptTagReg = /<script(?![^>]*setup)[^>]*>/i;
+          let m =
+            scriptTagReg.exec(finalCode) || normalScriptTagReg.exec(finalCode);
+          const importLine = `\n${ctx.hookImport}${
+            ctx.hookImport.trim().endsWith(";") ? "" : ";"
+          }\n`;
+          if (m) {
+            const insertPos = m.index + m[0].length;
+            finalCode =
+              finalCode.slice(0, insertPos) +
+              importLine +
+              finalCode.slice(insertPos);
+          } else {
+            // 没有脚本标签，兜底使用通用逻辑（会放在文件顶部）
+            finalCode = Utils.insertImports(finalCode, ctx.hookImport);
+          }
+        }
+      }
       FileIO.handleWriteStream(filePath, finalCode, () => {});
-      const varObj: any = { ...vueVarObj, ...Utils.getVarObj(foundList) };
-      return Utils.getGenerateNewLangObj(
-        foundList,
-        ctx.defaultLang,
-        ctx.initLang,
-        ctx.prefixKey,
-        varObj
-      );
+      // 组装返回时去除占位前缀，并保持 tpl/script 两段顺序：所有 tpl 后跟 script
+      const tplValues: string[] = [];
+      const scriptValues: string[] = [];
+      foundList.forEach((v) => {
+        if (v.startsWith("__TPL__")) tplValues.push(v.replace("__TPL__", ""));
+        else if (v.startsWith("__SCRIPT__"))
+          scriptValues.push(v.replace("__SCRIPT__", ""));
+      });
+      const ordered = [...tplValues, ...scriptValues];
+      const varObj: any = { ...vueVarObj, ...Utils.getVarObj(scriptValues) };
+      // 构造带有双命名空间 key 的语言对象
+      const langObj = {} as any;
+      if (ctx.defaultLang) langObj[ctx.defaultLang] = {};
+      (ctx.initLang || []).forEach((l) => (langObj[l] = {}));
+      // 模板 keys
+      tplValues.forEach((orig, i) => {
+        const key = `${ctx.prefixKey}tpl.${i}`;
+        langObj[ctx.defaultLang][key] =
+          (varObj[orig] && varObj[orig].newKey) || orig;
+        (ctx.initLang || []).forEach((l) => (langObj[l][key] = ""));
+      });
+      // 脚本 keys
+      scriptValues.forEach((orig, i) => {
+        const key = `${ctx.prefixKey}script.${i}`;
+        // 对于脚本中的模板字符串记录转换
+        langObj[ctx.defaultLang][key] =
+          (varObj[orig] && varObj[orig].newKey) || orig;
+        (ctx.initLang || []).forEach((l) => (langObj[l][key] = ""));
+      });
+      return langObj;
     } catch (e) {
       return null;
     }
