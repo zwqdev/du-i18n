@@ -47,6 +47,7 @@ export class Config {
   private transBatchSize: number; // 翻译批次大小（可配置）
   private scanIgnoreGlobs: string[]; // 批量扫描忽略的glob模式
   private scanIgnoreRegexes: RegExp[]; // 预编译忽略规则
+  private skipExtractCallees: string[]; // 跳过提取的函数调用名（例如 ['track','logger.track']）
 
   constructor(props: any = {}) {
     // 默认将配置文件放在工作区的 .vscode 目录
@@ -93,6 +94,7 @@ export class Config {
     this.transBatchSize = 10; // 默认翻译批次大小
     this.scanIgnoreGlobs = ["*.js", "*.ts"]; // 默认无忽略
     this.scanIgnoreRegexes = [];
+    this.skipExtractCallees = ["track", "trackClick"]; // 默认跳过 track 调用内部的字符串提取，可自行在配置中覆盖
   }
   async readConfig() {
     // 优先直接读取工作区 .vscode/yz-i18n.config.json（绝对路径）
@@ -134,6 +136,7 @@ export class Config {
         hookImport,
         transBatchSize,
         scanIgnoreGlobs,
+        skipExtractCallees,
         gjUserName = "yz_admin",
         gjPassword = "yz123456",
       } = config || {};
@@ -187,6 +190,11 @@ export class Config {
           (g) => typeof g === "string"
         );
         this.compileScanIgnoreRegexes();
+      }
+      if (Array.isArray(skipExtractCallees)) {
+        this.skipExtractCallees = skipExtractCallees.filter(
+          (c) => typeof c === "string" && c.trim().length
+        );
       }
       // this.fileReg = fileReg || this.fileReg;
       this.gjUserName = gjUserName;
@@ -297,12 +305,18 @@ export class Config {
       gjPassword: this.gjPassword,
       // 批量扫描忽略文件 (glob)
       scanIgnoreGlobs: this.scanIgnoreGlobs,
+      // 跳过提取的函数调用名
+      skipExtractCallees: this.skipExtractCallees,
     };
     return initConfig;
   }
 
   getConfigFilePath() {
     return this.configFilePath;
+  }
+
+  getSkipExtractCallees() {
+    return this.skipExtractCallees;
   }
 
   getProjectName() {

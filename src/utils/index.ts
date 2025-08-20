@@ -405,17 +405,22 @@ export class Utils {
     defaultLang: string,
     prefixKey: string,
     hookImport: string,
+    skipExtractCallees: string[],
     cb: Function
   ) {
     try {
-      // 全部使用 AST 实现；astProcessFile 返回 Promise<newLangObj|null>
       Utils.astProcessFile(
         filePath,
         initLang,
         quoteKeys,
         defaultLang,
         prefixKey,
-        hookImport
+        hookImport,
+        {
+          skipExtractCallees: Array.isArray(skipExtractCallees)
+            ? skipExtractCallees
+            : [],
+        }
       )
         .then((newLangObj: any) => {
           if (newLangObj) cb(newLangObj);
@@ -428,14 +433,15 @@ export class Utils {
     }
   }
 
-  // 尝试用 AST 解析并替换文件（若缺少依赖或类型不支持则返回 false）
+  // 尝试用 AST 解析并替换文件（若缺少依赖或类型不支持则返回 null）
   static async astProcessFile(
     filePath: string,
     initLang: string[],
     quoteKeys: string[],
     defaultLang: string,
     prefixKey: string,
-    hookImport: string
+    hookImport: string,
+    options: { skipExtractCallees?: string[] } = {}
   ) {
     try {
       const code = fs.readFileSync(filePath, "utf-8");
@@ -448,6 +454,7 @@ export class Utils {
           defaultLang,
           initLang,
           hookImport,
+          skipExtractCallees: options.skipExtractCallees || [],
         });
       }
 
@@ -461,6 +468,7 @@ export class Utils {
           quoteKeys,
           prefixKey,
           jsx: /\.(jsx|tsx)$/.test(filePath),
+          skipExtractCallees: options.skipExtractCallees || [],
         });
         if (!found.length) return null;
         FileIO.handleWriteStream(filePath, outCode, () => {});
@@ -553,9 +561,10 @@ export class Utils {
       prefixKey: string;
       jsx?: boolean;
       forceTs?: boolean;
+      skipExtractCallees?: string[];
     }
   ): { code: string; found: string[]; varObj: any } {
-    const { quoteKeys, prefixKey, forceTs } = opts;
+    const { quoteKeys, prefixKey, forceTs, skipExtractCallees = [] } = opts;
     // 收集需要忽略提取的行（含有 @i18n-ignore 标记的行，或紧随其后的下一行）
     const ignoreLineSet = new Set<number>();
     scriptContent.split(/\n/).forEach((line, idx) => {
@@ -617,6 +626,20 @@ export class Utils {
       }
       return false;
     };
+    const isInSkippedCallee = (path: any) => {
+      if (!skipExtractCallees.length) return false;
+      let p = path.parentPath;
+      while (p) {
+        if (p.isCallExpression && p.isCallExpression()) {
+          try {
+            const c = generate(p.node.callee).code;
+            if (skipExtractCallees.includes(c)) return true;
+          } catch (e) {}
+        }
+        p = p.parentPath;
+      }
+      return false;
+    };
     traverse(ast, {
       StringLiteral(path: any) {
         const line = path.node.loc && path.node.loc.start.line;
@@ -626,6 +649,7 @@ export class Utils {
         if (!val || !Utils._containsChinese(val)) return;
         if (/^\$\$[A-Za-z0-9_]+$/.test(val)) return;
         if (isInsideConsoleCall(path) || isInsideDecorator(path)) return;
+        if (isInSkippedCallee(path)) return; // skip configured callees
         if (
           Utils._isInsideI18nCall(path, scriptCalleeName) ||
           Utils._isInsideI18nCall(path, jsxCalleeName)
@@ -653,6 +677,7 @@ export class Utils {
         );
         if (!hasChinese) return;
         if (isInsideConsoleCall(path) || isInsideDecorator(path)) return;
+        if (isInSkippedCallee(path)) return;
         if (
           Utils._isInsideI18nCall(path, scriptCalleeName) ||
           Utils._isInsideI18nCall(path, jsxCalleeName)
@@ -694,6 +719,7 @@ export class Utils {
         const line = path.node.loc && path.node.loc.start.line;
         if (line && ignoreLineSet.has(line)) return;
         if (/^\$\$[A-Za-z0-9_]+$/.test(val)) return;
+        if (isInSkippedCallee(path)) return;
         const key = allocateKey(val);
         const leading = raw.match(/^[ \t\n\r]*/)[0];
         const trailing = raw.match(/[ \t\n\r]*$/)[0];
@@ -715,6 +741,7 @@ export class Utils {
         if (!attr || !attr.value) return;
         const line = attr.loc && attr.loc.start && attr.loc.start.line;
         if (line && ignoreLineSet.has(line)) return;
+        if (isInSkippedCallee(path)) return;
         const processExpressionsText = (
           originalCode: string,
           quasis: any[],
@@ -807,6 +834,7 @@ export class Utils {
       defaultLang: string;
       initLang: string[];
       hookImport: string;
+      skipExtractCallees?: string[];
     }
   ) {
     try {
@@ -971,6 +999,7 @@ export class Utils {
             prefixKey: ctx.prefixKey,
             jsx: filePath.endsWith(".tsx"),
             forceTs,
+            skipExtractCallees: ctx.skipExtractCallees || [],
           });
           if (found.length) {
             // Find the blockContent occurrence starting from the block's start offset

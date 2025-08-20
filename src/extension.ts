@@ -122,6 +122,7 @@ export async function activate(context: vscode.ExtensionContext) {
                 defaultLang,
                 prefixKey,
                 isHookImport,
+                config.getSkipExtractCallees(),
                 (newLangObj) => {
                   if (!isEmpty(newLangObj)) {
                     FileIO.writeIntoTempFile(
@@ -220,7 +221,8 @@ export async function activate(context: vscode.ExtensionContext) {
                           keys,
                           defaultLang,
                           prefixKey,
-                          isHookImport
+                          isHookImport,
+                          { skipExtractCallees: config.getSkipExtractCallees() }
                         );
                       } catch (e) {
                         console.error("astProcessFile error", e);
