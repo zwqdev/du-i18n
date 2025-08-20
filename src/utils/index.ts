@@ -2009,6 +2009,12 @@ export class Utils {
     Object.entries(localLangObj).forEach(([lang, obj]) => {
       if (lang === defaultLang) return;
       if (!transSourceObj[lang]) transSourceObj[lang] = {};
+
+      if (isEmpty(obj)) {
+        Object.keys(defaultSource).forEach((k) => {
+          (obj as any)[k] = "";
+        });
+      }
       Object.keys(obj as any).forEach((k) => {
         if (!(obj as any)[k]) {
           langKey = lang;
@@ -2182,6 +2188,13 @@ export class Utils {
                   // console.log('lang', lang, defaultLang);
                   if (lang !== defaultLang) {
                     const source = transSourceObj[lang] || {};
+
+                    if (isEmpty(obj)) {
+                      Object.keys(zhSource).forEach((k) => {
+                        obj[k] = "";
+                      });
+                    }
+
                     Object.keys(obj).forEach((k) => {
                       const chieseStr = zhSource[k];
                       if (isOverWriteLocal) {
