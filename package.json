@@ -53,7 +53,7 @@
     "国际化 i18n",
     "国际化插件"
   ],
-  "icon": "public/logo.png",
+  "icon": "public/logo.jpg",
   "activationEvents": [
     "onLanguage:javascript",
     "onLanguage:typescript",
