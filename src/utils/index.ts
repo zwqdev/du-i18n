@@ -499,7 +499,23 @@ export class Utils {
           keyOffset,
         });
         if (!found.length) return null;
-        await Utils.writeFileAsync(filePath, outCode);
+        // If a hookImport is provided, attempt to inject it into the transformed script
+        let finalOutCode = outCode;
+        try {
+          if (hookImport) {
+            finalOutCode = Utils.insertImports(finalOutCode, hookImport);
+            // Ensure there's a newline between adjacent import statements after insertion
+            finalOutCode = finalOutCode.replace(/;\s*(?=import\b)/g, ";\n");
+            finalOutCode = finalOutCode.replace(
+              /from\s+((?:'[^']*'|"[^"]*"))\s*(?=import\b)/g,
+              "from $1\n"
+            );
+          }
+        } catch (e) {
+          // ignore injection errors and fall back to writing the transformed code
+          finalOutCode = outCode;
+        }
+        await Utils.writeFileAsync(filePath, finalOutCode);
         return Utils.getGenerateNewLangObj(
           found,
           defaultLang,
@@ -1242,10 +1258,16 @@ export class Utils {
                     node.content && node.content.content
                       ? node.content.content
                       : "";
-                  if (
-                    Utils._containsChinese(val) &&
-                    !translateCallReg.test(val)
-                  ) {
+                  // strip block and line comments to avoid Chinese in comments
+                  const stripped = val
+                    .replace(/\/\*[\s\S]*?\*\//g, "")
+                    .replace(/\/\/.*$/gm, "")
+                    .trim();
+                  // If expression already contains a translation call (primaryFn or configured), skip
+                  const hasI18nCall =
+                    translateCallReg.test(stripped) ||
+                    (primaryFn && stripped.indexOf(primaryFn + "(") > -1);
+                  if (Utils._containsChinese(stripped) && !hasI18nCall) {
                     let processed = false;
                     try {
                       const plugins = [
@@ -1382,11 +1404,15 @@ export class Utils {
             ? descriptor.template.loc.start.offset
             : finalCode.indexOf(originalTemplate);
           // Convert node-local offsets to file-global offsets
-          const globalRepls = replacements.map((r) => ({
-            start: tplLocStart + r.start,
-            end: tplLocStart + r.end,
-            text: r.text,
-          }));
+          const globalRepls = replacements.map((r) => {
+            // node.loc offsets may be relative to template content or absolute to file.
+            // If r.start is within template length, treat as relative; otherwise assume absolute.
+            const isRelative =
+              typeof r.start === "number" && r.start <= originalTemplate.length;
+            const start = isRelative ? tplLocStart + r.start : r.start;
+            const end = isRelative ? tplLocStart + r.end : r.end;
+            return { start, end, text: r.text };
+          });
           // queue into fileReplacements (we'll apply fileReplacements after script processing)
           globalRepls.forEach((g) => fileReplacements.push(g));
         }
@@ -2235,7 +2261,9 @@ export class Utils {
       let newContent =
         content.slice(0, scriptStart) + newScript + content.slice(scriptEnd);
       // normalize missing newline between consecutive import statements like:
-      // from 'a'import b from 'c'  => insert newline after module string
+      // ...';import ...  => insert newline after semicolon
+      newContent = newContent.replace(/;\s*(?=import\b)/g, ";\n");
+      // also normalize "from 'a'import b" style by inserting newline after module string
       newContent = newContent.replace(
         /from\s+((?:'[^']*'|"[^"]*"))\s*(?=import\b)/g,
         "from $1\n"
@@ -2277,6 +2305,8 @@ export class Utils {
         const prefixNorm = prefix.replace(/\n*$/, "\n");
         const suffixNorm = suffix.replace(/^\n*/, "");
         let result = prefixNorm + importText + suffixNorm;
+        // ensure semicolon+import spacing (e.g. "...';import ...")
+        result = result.replace(/;\s*(?=import\b)/g, ";\n");
         result = result.replace(
           /from\s+((?:'[^']*'|"[^"]*"))\s*(?=import\b)/g,
           "from $1\n"
@@ -2286,380 +2316,6 @@ export class Utils {
         return content;
       }
     }
-  }
-  /**
-   * 获取新的文件字符串，针对vue
-   * @param data
-   * @param chars
-   * @param notePositionList
-   * @returns
-   */
-  static getVueNewContent(
-    data: string,
-    chars: any[],
-    initLang: string[],
-    quoteKeys: string[],
-    keyPrefix: string,
-    isSingleQuote: boolean,
-    hookImport: string
-  ) {
-    // 将key写入i18n
-    let newData = data;
-    if (data && chars.length) {
-      // 处理含有变量的key
-      const varObj: any = Utils.getVarObj(chars);
-      // 获取新的$t引用
-      const getI18nT = (suffix: string, key: string, char: string) => {
-        const keyStr = isSingleQuote ? `'${key}'` : `"${key}"`;
-        let i18nT = `${suffix}(${keyStr})`;
-        if (varObj[char]) {
-          i18nT = `${suffix}(${keyStr}, [${varObj[char].varList}])`;
-        }
-        return i18nT;
-      };
-
-      const getScriptType = (str: string) => {
-        const reg = /<script.*?>/;
-        const arr = reg.exec(str);
-        if (arr) {
-          return arr[0].length + arr.index;
-        } else {
-          return -1;
-        }
-      };
-
-      const getTemplateStr = (keys: any[]) => {
-        if (data.indexOf("<template>") < 0) {
-          return "";
-        }
-        const templateStartIndex =
-          data.indexOf("<template>") + "<template>".length;
-        const templateEndIndex = data.lastIndexOf("</template>");
-        // ...existing code...
-        let text = data.substring(templateStartIndex, templateEndIndex);
-        // ...existing code...
-        // const replaceKey = quoteKeys.includes('$t') ? '$t' : quoteKeys[0];
-        const replaceKey = quoteKeys[0];
-        (keys || []).forEach((char, i) => {
-          const key = `${keyPrefix}${i}`;
-          const i18nT = getI18nT(replaceKey, key, char);
-
-          let startIndex = -1,
-            endIndex = 0;
-          while ((startIndex = text.indexOf(char, endIndex)) > -1) {
-            // ...existing code...
-            endIndex = startIndex + char.length;
-            let preIndex = startIndex - 2,
-              str = "",
-              pre = text[startIndex - 1],
-              suff = text[endIndex];
-            // console.log("text[endIndex]", pre, suff)
-            if (chineseCharReg.test(pre) || chineseCharReg.test(suff)) {
-              // 前后的字符还是中文，说明属于包含关系
-              continue;
-            }
-
-            if (preIndex >= 0 && text[preIndex] === "=") {
-              while (text[preIndex] !== " ") {
-                if (
-                  text[preIndex] === "\n" ||
-                  text[preIndex] === " " ||
-                  preIndex < 0
-                ) {
-                  break;
-                }
-                preIndex--;
-              }
-              preIndex = preIndex + 1;
-              str = ":" + text.substring(preIndex, endIndex);
-              str = str.replace(char, i18nT);
-              text = text.slice(0, preIndex) + str + text.slice(endIndex);
-            } else if (boundaryCodes.includes(suff) && pre === suff) {
-              // 冒号的引用
-              str = i18nT;
-              text =
-                text.slice(0, startIndex - 1) + str + text.slice(endIndex + 1);
-            } else {
-              str = `{{ ${i18nT} }}`;
-              text = text.slice(0, startIndex) + str + text.slice(endIndex);
-            }
-          }
-        });
-        return text;
-      };
-
-      const getScriptStr = (keys: any[]) => {
-        const scriptStartIndex = getScriptType(data);
-        const scriptEndIndex = data.lastIndexOf("</script>");
-        // console.log("scriptStartIndex", scriptStartIndex, scriptEndIndex)
-        let text = data.substring(scriptStartIndex, scriptEndIndex);
-        // console.log("script", text);
-        (keys || []).filter(Boolean).forEach((char, i) => {
-          const key = `${keyPrefix}${i}`;
-          const replaceKey = quoteKeys[1];
-          const i18nT = getI18nT(replaceKey, key, char);
-          let completionKeyStr = Utils.getRegExpStr(char);
-          const reg = new RegExp(`[\`'"](${completionKeyStr})[\`'"]`, "g");
-          // const reg = new RegExp(`['"\`](${char})['"\`]`, "g");
-          text = text.replace(reg, `${i18nT}`);
-        });
-        return text;
-      };
-
-      const handleTemplate = () => {
-        // 将原文件替换$t('key')形式
-        const templateStr = getTemplateStr(chars);
-        if (templateStr) {
-          const templateStartIndex =
-            newData.indexOf("<template>") + "<template>".length;
-          const templateEndIndex = newData.lastIndexOf("</template>");
-          newData =
-            newData.slice(0, templateStartIndex) +
-            templateStr +
-            newData.slice(templateEndIndex);
-        }
-      };
-
-      const handleScript = () => {
-        // 将原文件替换$t('key')形式
-        const scriptStr = getScriptStr(chars);
-        const scriptStartIndex = getScriptType(newData);
-        const scriptEndIndex = newData.lastIndexOf("</script>");
-        newData =
-          newData.slice(0, scriptStartIndex) +
-          scriptStr +
-          newData.slice(scriptEndIndex);
-      };
-
-      // // 将key写入i18n
-      // handleI18N();
-      // 将原文件替换$t('key')形式
-      handleTemplate();
-      handleScript();
-
-      if (hookImport) {
-        newData = Utils.insertImports(newData, hookImport);
-      }
-    }
-    return newData;
-  }
-
-  /**
-   * 获取新的文件字符串，针对js/ts
-   * @param data
-   * @param chars
-   * @param notePositionList
-   * @returns
-   */
-  static getJSNewContent(
-    data: string,
-    chars: any[],
-    quoteKeys: string[],
-    keyPrefix: string,
-    isSingleQuote: boolean,
-    hookImport: string
-  ) {
-    // 将key写入i18n
-    let newData = data;
-    if (data && chars.length) {
-      // 处理含有变量的key
-      const varObj: any = Utils.getVarObj(chars);
-      // 获取新的$t引用
-      const getI18nT = (suffix: string, key: string, char: string) => {
-        const keyStr = isSingleQuote ? `'${key}'` : `"${key}"`;
-        let i18nT = `${suffix}(${keyStr})`;
-        if (varObj[char]) {
-          i18nT = `${suffix}(${keyStr}, [${varObj[char].varList}])`;
-        }
-        return i18nT;
-      };
-
-      const replaceI18nStr = (keys: any[]) => {
-        let text = data;
-        // console.log("script", text);
-        const replaceKey = quoteKeys[1];
-        (keys || []).filter(Boolean).forEach((char, i) => {
-          const key = `${keyPrefix}${i}`;
-          const i18nT = getI18nT(replaceKey, key, char);
-          let completionKeyStr = Utils.getRegExpStr(char);
-          const reg = new RegExp(`[\`'"](${completionKeyStr})[\`'"]`, "g");
-          // const reg = new RegExp(`['"\`](${char})['"\`]`, "g");
-          text = text.replace(reg, `${i18nT}`);
-        });
-        return text;
-      };
-
-      const handleReplace = () => {
-        // 初始化中文和日语
-        const i18nStr = replaceI18nStr(chars);
-        newData = i18nStr;
-
-        if (hookImport) {
-          newData = Utils.insertImports(newData, hookImport);
-        }
-      };
-
-      handleReplace();
-    }
-    return newData;
-  }
-
-  /**
-   * 获取新的文件字符串，针对jsx
-   * @param data
-   * @param chars
-   * @param notePositionList
-   * @returns
-   */
-  static getJSXNewContent(
-    data: string,
-    chars: any[],
-    quoteKeys: string[],
-    keyPrefix: string,
-    isSingleQuote: boolean,
-    hookImport: string
-  ) {
-    if (!data || !chars.length) {
-      return data;
-    }
-
-    // 直接使用原始的、经过验证的实现，但增强模板字符串处理
-    // 将key写入i18n
-    let newData = data;
-    if (data && chars.length) {
-      // 处理含有变量的key
-      const varObj: any = Utils.getVarObj(chars);
-      const getI18nT = (suffix: string, key: string, char: string) => {
-        const keyStr = isSingleQuote ? `'${key}'` : `"${key}"`;
-        let i18nT = `${suffix}(${keyStr})`;
-        if (varObj[char]) {
-          i18nT = `${suffix}(${keyStr}, [${varObj[char].varList}])`;
-        }
-        return i18nT;
-      };
-
-      const replaceI18nStr = (keys: any[]) => {
-        let text = data;
-
-        // 为每个字符串创建多个变体用于匹配
-        const createVariants = (char: string) => {
-          const variants = [char];
-
-          // 如果包含模板变量和换行符，创建规范化变体
-          if (
-            char.includes("${") &&
-            (char.includes("\r\n") || char.includes("\n"))
-          ) {
-            // 变体1: \r\n -> \n
-            variants.push(char.replace(/\r\n/g, "\n"));
-            // 变体2: \r -> \n
-            variants.push(char.replace(/\r/g, "\n"));
-            // 变体3: 规范化空白
-            variants.push(
-              char
-                .replace(/\r\n/g, "\n")
-                .replace(/\n\s+/g, "\n")
-                .replace(/\s+\n/g, "\n")
-            );
-            // 变体4: 移除所有多余空白
-            variants.push(char.replace(/\s+/g, " ").trim());
-          }
-
-          return Array.from(new Set(variants)); // 去重
-        };
-
-        // 第一轮：JSX属性替换 (={...})
-        (keys || []).filter(Boolean).forEach((char, i) => {
-          const key = `${keyPrefix}${i}`;
-          const replaceKey = quoteKeys[0];
-          const i18nT = getI18nT(replaceKey, key, char);
-
-          const variants = createVariants(char);
-          variants.forEach((variant) => {
-            let completionKeyStr = Utils.getRegExpStr(variant);
-            const reg = new RegExp(`=[\`'"](${completionKeyStr})[\`'"]`, "g");
-            text = text.replace(reg, `={${i18nT}}`);
-          });
-        });
-
-        // 第二轮：字符串字面量替换（包括模板字符串）
-        (keys || []).filter(Boolean).forEach((char, i) => {
-          const key = `${keyPrefix}${i}`;
-          const replaceKey = quoteKeys[0];
-          const i18nT = getI18nT(replaceKey, key, char);
-
-          const variants = createVariants(char);
-          variants.forEach((variant) => {
-            let completionKeyStr = Utils.getRegExpStr(variant);
-            // 只匹配被引号包围的字符串，避免替换注释等内容
-            const reg = new RegExp(`[\`'"](${completionKeyStr})[\`'"]`, "g");
-            text = text.replace(reg, `${i18nT}`);
-          });
-        });
-
-        // 第三轮：JSX Text节点替换（不带引号的JSX内容）
-        (keys || []).filter(Boolean).forEach((char, i) => {
-          const key = `${keyPrefix}${i}`;
-          const replaceKey = quoteKeys[0];
-          const i18nT = getI18nT(replaceKey, key, char);
-
-          const variants = createVariants(char);
-          variants.forEach((variant) => {
-            let completionKeyStr = Utils.getRegExpStr(variant);
-
-            // 处理 JSX 文本节点的多种情况：
-            // 1. 标准的 >text</tag> 格式
-            // 2. 带换行和缩进的格式
-            // 3. 自闭合标签内的文本
-
-            // 匹配标签内的纯文本（可能包含空白字符）
-            // 确保不匹配已经被{}包围的内容
-            const jsxTextRegex = new RegExp(
-              `(>[^{<]*?)\\b(${completionKeyStr})\\b([^}<]*?</?)`,
-              "g"
-            );
-
-            // 先检查是否已经被替换过
-            const beforeReplace = text;
-            text = text.replace(
-              jsxTextRegex,
-              (match, before, targetText, after) => {
-                // 如果前面已经有{或者后面已经有}，说明已经被处理过了
-                if (before.includes("{") || after.includes("}")) {
-                  return match;
-                }
-                return `${before}{${i18nT}}${after}`;
-              }
-            );
-
-            // 如果上面的正则没有匹配到，尝试更简单的模式
-            if (text === beforeReplace) {
-              // 匹配简单的 >文本< 格式
-              const simpleRegex = new RegExp(
-                `(>\\s*)(${completionKeyStr})(\\s*<)`,
-                "g"
-              );
-              text = text.replace(simpleRegex, `$1{${i18nT}}$3`);
-            }
-          });
-        });
-
-        return text;
-      };
-
-      const handleReplace = () => {
-        const i18nStr = replaceI18nStr(chars);
-        newData = i18nStr;
-      };
-
-      // 将原文件替换
-      handleReplace();
-
-      if (hookImport) {
-        newData = Utils.insertImports(newData, hookImport);
-      }
-    }
-    return newData;
   }
 
   // 获取字符串的字节数
