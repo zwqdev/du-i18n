@@ -537,31 +537,68 @@ export class Utils {
     return /[\u4e00-\u9fa5]/.test(s);
   }
 
-  private static _createGuards() {
+  private static _createGuards(parentCache?: WeakMap<any, any>) {
+    // parentCache stores computed flags per AST node to avoid repeated upward traversals.
+    const cache: WeakMap<any, any> = parentCache || new WeakMap();
+    const getInfo = (node: any) => {
+      let info = cache.get(node);
+      if (!info) {
+        info = {};
+        cache.set(node, info);
+      }
+      return info;
+    };
+
     const isInsideConsoleCall = (path: any) => {
+      // check cached result for starting node
+      const startInfo = cache.get(path.node);
+      if (startInfo && startInfo.isInsideConsoleCall !== undefined)
+        return startInfo.isInsideConsoleCall;
+
       let p = path.parentPath;
       while (p) {
+        const cached = cache.get(p.node);
+        if (cached && cached.isInsideConsoleCall !== undefined)
+          return cached.isInsideConsoleCall;
         if (p.isCallExpression && p.isCallExpression()) {
           const callee = p.node.callee;
           if (
             t.isMemberExpression(callee) &&
             t.isIdentifier(callee.object, { name: "console" })
-          )
+          ) {
+            // mark positive on this ancestor and for starter
+            getInfo(p.node).isInsideConsoleCall = true;
+            getInfo(path.node).isInsideConsoleCall = true;
             return true;
+          }
         }
         p = p.parentPath;
       }
+      getInfo(path.node).isInsideConsoleCall = false;
       return false;
     };
+
     const isInsideDecorator = (path: any) => {
+      const startInfo = cache.get(path.node);
+      if (startInfo && startInfo.isInsideDecorator !== undefined)
+        return startInfo.isInsideDecorator;
       let p = path.parentPath;
       while (p) {
-        if (p.node && p.node.type === "Decorator") return true;
+        const cached = cache.get(p.node);
+        if (cached && cached.isInsideDecorator !== undefined)
+          return cached.isInsideDecorator;
+        if (p.node && p.node.type === "Decorator") {
+          getInfo(p.node).isInsideDecorator = true;
+          getInfo(path.node).isInsideDecorator = true;
+          return true;
+        }
         p = p.parentPath;
       }
+      getInfo(path.node).isInsideDecorator = false;
       return false;
     };
-    return { isInsideConsoleCall, isInsideDecorator };
+
+    return { isInsideConsoleCall, isInsideDecorator, cache };
   }
 
   private static _buildCallee(name: string) {
@@ -585,17 +622,47 @@ export class Utils {
     }
   }
 
-  private static _isInsideI18nCall(path: any, calleeName: string) {
+  private static _isInsideI18nCall(
+    path: any,
+    calleeName: string,
+    parentCache?: WeakMap<any, any>
+  ) {
+    const cache: WeakMap<any, any> = parentCache || new WeakMap();
+    const getInfo = (node: any) => {
+      let info = cache.get(node);
+      if (!info) {
+        info = {};
+        cache.set(node, info);
+      }
+      return info;
+    };
+
+    const startInfo = cache.get(path.node);
+    if (startInfo && startInfo.i18n && startInfo.i18n[calleeName] !== undefined)
+      return startInfo.i18n[calleeName];
+
     let p = path.parentPath;
     while (p) {
+      const info = cache.get(p.node);
+      if (info && info.i18n && info.i18n[calleeName] !== undefined)
+        return info.i18n[calleeName];
       if (p.isCallExpression && p.isCallExpression()) {
         try {
           const c = generate(p.node.callee).code;
-          if (c === calleeName) return true;
+          if (c === calleeName) {
+            const ii = getInfo(p.node);
+            ii.i18n = ii.i18n || {};
+            ii.i18n[calleeName] = true;
+            getInfo(path.node).i18n = getInfo(path.node).i18n || {};
+            getInfo(path.node).i18n[calleeName] = true;
+            return true;
+          }
         } catch (e) {}
       }
       p = p.parentPath;
     }
+    getInfo(path.node).i18n = getInfo(path.node).i18n || {};
+    getInfo(path.node).i18n[calleeName] = false;
     return false;
   }
 
@@ -656,7 +723,19 @@ export class Utils {
       throw e;
     }
 
-    const { isInsideConsoleCall, isInsideDecorator } = Utils._createGuards();
+    const {
+      isInsideConsoleCall,
+      isInsideDecorator,
+      cache: parentCache,
+    } = Utils._createGuards();
+    const getNodeInfo = (node: any) => {
+      let info = parentCache.get(node);
+      if (!info) {
+        info = {};
+        parentCache.set(node, info);
+      }
+      return info;
+    };
     const found: string[] = [];
     const varObj: Record<string, { newKey: string; varList: string[] }> = {};
     const scriptCalleeName = quoteKeys[1] || "i18n.t";
@@ -689,16 +768,29 @@ export class Utils {
     };
     const isInSkippedCallee = (path: any) => {
       if (!skipExtractCallees.length) return false;
+      const nodeInfo = parentCache.get(path.node);
+      if (nodeInfo && nodeInfo.skipped !== undefined) return nodeInfo.skipped;
       let p = path.parentPath;
       while (p) {
+        const pInfo = parentCache.get(p.node);
+        if (pInfo && pInfo.skipped !== undefined) {
+          // propagate cached result to start node
+          getNodeInfo(path.node).skipped = pInfo.skipped;
+          return pInfo.skipped;
+        }
         if (p.isCallExpression && p.isCallExpression()) {
           try {
             const c = generate(p.node.callee).code;
-            if (skipExtractCallees.includes(c)) return true;
+            if (skipExtractCallees.includes(c)) {
+              getNodeInfo(p.node).skipped = true;
+              getNodeInfo(path.node).skipped = true;
+              return true;
+            }
           } catch (e) {}
         }
         p = p.parentPath;
       }
+      getNodeInfo(path.node).skipped = false;
       return false;
     };
     traverse(ast, {
