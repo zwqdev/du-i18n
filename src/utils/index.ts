@@ -30,6 +30,19 @@ const SPLIT = "---$$_$$---";
 export const DEFAULT_TRANS_BATCH_SIZE = 10;
 
 export class Utils {
+  // Promise wrapper for FileIO.handleWriteStream to ensure writes complete before returning
+  static writeFileAsync(filePath: string, content: string) {
+    return new Promise<void>((resolve, reject) => {
+      try {
+        // Use sync write to ensure write completes reliably in this context.
+        fs.writeFileSync(filePath, content, { encoding: "utf8" });
+        resolve();
+      } catch (e) {
+        reject(e);
+      }
+    });
+  }
+
   /**
    * 获取复制对象的value
    * 如{ "a.b": 1, a: { c: 2, d: [{e: 'e'}, {f: 'f'}] } }，获取obj, 'a.d.1.f'
@@ -42,7 +55,7 @@ export class Utils {
       if (Object(obj).hasOwnProperty(key)) {
         return obj[key];
       } else {
-        if (key.indexOf(".")) {
+        if (key.indexOf(".") > -1) {
           return key
             .split(".")
             .reduce(
@@ -449,7 +462,7 @@ export class Utils {
 
       // Vue 单文件组件处理
       if (/\.vue$/.test(filePath)) {
-        return Utils._processVueSfc(filePath, code, {
+        return await Utils._processVueSfc(filePath, code, {
           quoteKeys,
           prefixKey,
           defaultLang,
@@ -486,7 +499,7 @@ export class Utils {
           keyOffset,
         });
         if (!found.length) return null;
-        FileIO.handleWriteStream(filePath, outCode, () => {});
+        await Utils.writeFileAsync(filePath, outCode);
         return Utils.getGenerateNewLangObj(
           found,
           defaultLang,
@@ -498,7 +511,8 @@ export class Utils {
       }
       return null; // 非支持类型
     } catch (e) {
-      return null;
+      // Surface error to caller so they can distinguish parse/IO errors
+      throw e;
     }
   }
 
@@ -579,6 +593,7 @@ export class Utils {
       forceTs?: boolean;
       skipExtractCallees?: string[];
       keyOffset?: number; // 新增：全局 key 偏移（用于 Vue 模板已占用的条目数）
+      keyNamespace?: string; // 可选：当提供时，生成的 key 使用此命名空间 (例如 "prefixscript.")
     }
   ): { code: string; found: string[]; varObj: any } {
     const {
@@ -587,6 +602,7 @@ export class Utils {
       forceTs,
       skipExtractCallees = [],
       keyOffset = 0,
+      keyNamespace,
     } = opts;
     // 收集需要忽略提取的行（含有 @i18n-ignore 标记的行，或紧随其后的下一行）
     const ignoreLineSet = new Set<number>();
@@ -617,9 +633,11 @@ export class Utils {
         plugins,
         ranges: true,
         tokens: true,
-      });
+        locations: true,
+      } as any);
     } catch (e) {
-      return { code: scriptContent, found: [], varObj: {} };
+      // Rethrow parse errors so caller can handle (avoid silent null)
+      throw e;
     }
 
     const { isInsideConsoleCall, isInsideDecorator } = Utils._createGuards();
@@ -630,6 +648,10 @@ export class Utils {
     const allocateKey = (original: string) => {
       const idx = found.length; // 局部索引
       found.push(original);
+      // 如果提供了命名空间（例如在 Vue SFC 中希望使用 `${prefix}script.`），优先使用它并从 0 开始编号
+      if (keyNamespace) {
+        return `${keyNamespace}${idx}`;
+      }
       return `${prefixKey}${keyOffset + idx}`; // 叠加偏移，确保与最终 foundList 全局序号一致
     };
 
@@ -848,7 +870,7 @@ export class Utils {
     return { code: scriptContent, found, varObj };
   }
 
-  private static _processVueSfc(
+  private static async _processVueSfc(
     filePath: string,
     code: string,
     ctx: {
@@ -866,6 +888,48 @@ export class Utils {
       const foundList: string[] = [];
       let vueVarObj: any = {};
       let scriptReplaced = false; // 新增：是否对 <script>/<script setup> 做了替换
+
+      // Compute existing tpl/script key max indices in the file to avoid duplicate keys
+      const tplStartBase = (() => {
+        try {
+          if (!ctx.prefixKey) return 0;
+          const esc = ctx.prefixKey.replace(/([.*+?^${}()|[\\]\\])/g, "\\$1");
+          const reg = new RegExp(`${esc}tpl\\.(\\d+)`, "g");
+          let m: RegExpExecArray | null;
+          let max = -1;
+          while ((m = reg.exec(code))) {
+            const n = parseInt(m[1], 10);
+            if (!isNaN(n) && n > max) max = n;
+          }
+          return max + 1;
+        } catch (e) {
+          return 0;
+        }
+      })();
+
+      const scriptStartBase = (() => {
+        try {
+          if (!ctx.prefixKey) return 0;
+          const esc = ctx.prefixKey.replace(/([.*+?^${}()|[\\]\\])/g, "\\$1");
+          const reg = new RegExp(`${esc}script\\.(\\d+)`, "g");
+          let m: RegExpExecArray | null;
+          let max = -1;
+          while ((m = reg.exec(code))) {
+            const n = parseInt(m[1], 10);
+            if (!isNaN(n) && n > max) max = n;
+          }
+          return max + 1;
+        } catch (e) {
+          return 0;
+        }
+      })();
+
+      // file-level replacements (absolute offsets) to apply after all transforms
+      const fileReplacements: Array<{
+        start: number;
+        end: number;
+        text: string;
+      }> = [];
 
       // template AST 处理，替换正则方案
       if (descriptor.template && descriptor.template.content) {
@@ -892,11 +956,13 @@ export class Utils {
                 .join("|")})\\(`
             )
           : /\b__never_match__\b/; // 无配置时永远不匹配
-        let tplIndex = 0; // local counter for tpl keys
+        let tplIndex = 0; // local counter for tpl keys (relative)
         const allocateKeyLocal = (val: string) => {
           const idx = tplIndex++;
           foundList.push(`__TPL__${val}`); // 用特殊前缀占位，后面统一转换
-          return `${ctx.prefixKey}tpl.${idx}`;
+          // Use computed tplStartBase to avoid reusing existing indices
+          const keyIndex = tplStartBase + idx;
+          return `${ctx.prefixKey}tpl.${keyIndex}`;
         };
         const traverseNodes = (children: any[]) => {
           if (!Array.isArray(children)) return;
@@ -912,6 +978,7 @@ export class Utils {
                     const leading = raw.match(/^[ \t\n\r]*/)[0];
                     const trailing = raw.match(/[ \t\n\r]*$/)[0];
                     const replacement = `${leading}{{ ${primaryFn}('${key}') }}${trailing}`;
+                    // compute absolute offsets for template node by adding template content start later
                     replacements.push({
                       start: node.loc.start.offset,
                       end: node.loc.end.offset,
@@ -973,7 +1040,11 @@ export class Utils {
                             if ((babelParser as any).parseExpression) {
                               exprAst = (babelParser as any).parseExpression(
                                 exp,
-                                { plugins, sourceType: "module" }
+                                {
+                                  plugins,
+                                  sourceType: "module",
+                                  locations: true,
+                                } as any
                               );
                             } else {
                               exprAst = (babelParser as any).parse(
@@ -981,7 +1052,8 @@ export class Utils {
                                 {
                                   plugins: plugins as any,
                                   sourceType: "module",
-                                }
+                                  locations: true,
+                                } as any
                               ).program.body[0].expression as any;
                             }
                           } catch (e) {
@@ -1189,12 +1261,14 @@ export class Utils {
                         exprAst = (babelParser as any).parseExpression(val, {
                           plugins,
                           sourceType: "module",
-                        });
+                          locations: true,
+                        } as any);
                       } else {
                         exprAst = (babelParser as any).parse("(" + val + ")", {
                           plugins: plugins as any,
                           sourceType: "module",
-                        }).program.body[0].expression as any;
+                          locations: true,
+                        } as any).program.body[0].expression as any;
                       }
                       if (exprAst && t.isConditionalExpression(exprAst)) {
                         const ce = exprAst;
@@ -1302,14 +1376,19 @@ export class Utils {
         };
         traverseNodes(tplAst.children);
         if (replacements.length) {
-          // 直接逆序应用到原模板文本
-          const sorted = replacements.sort((a, b) => b.start - a.start);
-          let newTemplate = originalTemplate;
-          sorted.forEach((r) => {
-            newTemplate =
-              newTemplate.slice(0, r.start) + r.text + newTemplate.slice(r.end);
-          });
-          finalCode = finalCode.replace(originalTemplate, newTemplate);
+          // Apply replacements to template using absolute offsets relative to the whole file
+          // descriptor.template.loc provides the absolute start offset of the template content
+          const tplLocStart = descriptor.template.loc
+            ? descriptor.template.loc.start.offset
+            : finalCode.indexOf(originalTemplate);
+          // Convert node-local offsets to file-global offsets
+          const globalRepls = replacements.map((r) => ({
+            start: tplLocStart + r.start,
+            end: tplLocStart + r.end,
+            text: r.text,
+          }));
+          // queue into fileReplacements (we'll apply fileReplacements after script processing)
+          globalRepls.forEach((g) => fileReplacements.push(g));
         }
       }
 
@@ -1346,6 +1425,9 @@ export class Utils {
         [];
       scriptBlocks.forEach(
         ({ content: blockContent, forceTs, startSearchIndex }) => {
+          // Quick skip: if block contains no Chinese, don't parse
+          if (!Utils._containsChinese(blockContent)) return;
+
           const {
             code: newPart,
             found,
@@ -1357,25 +1439,27 @@ export class Utils {
             forceTs,
             skipExtractCallees: ctx.skipExtractCallees || [],
             // 仅统计模板部分数量（去除脚本已加入的数量），模板部分用 __TPL__ 标记，不计入脚本偏移
-            keyOffset: foundList.filter((k) => k.startsWith("__TPL__")).length,
+            keyOffset:
+              foundList.filter((k) => k.startsWith("__TPL__")).length +
+              scriptStartBase,
+            // Ensure script-generated keys use the script namespace so they match returned langObj
+            keyNamespace: `${ctx.prefixKey}script.`,
           });
           if (found.length) {
-            // Find the blockContent occurrence starting from the block's start offset
-            const contentIndex = finalCode.indexOf(
-              blockContent,
-              startSearchIndex
-            );
-            if (contentIndex > -1) {
-              replacements.push({
-                start: contentIndex,
-                end: contentIndex + blockContent.length,
+            // Use descriptor loc when available to compute absolute positions for replacement
+            // We try to find the block's absolute start via startSearchIndex (provided earlier from descriptor.loc)
+            const blockAbsStart = startSearchIndex;
+            if (blockAbsStart != null && blockAbsStart >= 0) {
+              fileReplacements.push({
+                start: blockAbsStart,
+                end: blockAbsStart + blockContent.length,
                 text: newPart,
               });
             } else {
-              // Fallback: if not found at expected region, try global replace as last resort
+              // fallback to searching by content
               const idx = finalCode.indexOf(blockContent);
               if (idx > -1) {
-                replacements.push({
+                fileReplacements.push({
                   start: idx,
                   end: idx + blockContent.length,
                   text: newPart,
@@ -1391,10 +1475,10 @@ export class Utils {
         }
       );
 
-      // Apply replacements in reverse order (so offsets remain valid)
-      if (replacements.length) {
-        replacements.sort((a, b) => b.start - a.start);
-        replacements.forEach((r) => {
+      // Apply queued fileReplacements in reverse order (so offsets remain valid)
+      if (fileReplacements.length) {
+        fileReplacements.sort((a, b) => b.start - a.start);
+        fileReplacements.forEach((r) => {
           finalCode =
             finalCode.slice(0, r.start) + r.text + finalCode.slice(r.end);
         });
@@ -1404,46 +1488,19 @@ export class Utils {
       // 更宽松的 import 注入策略：
       // 1) 只要生成了 key 或检测到翻译函数调用
       // 2) 未已存在相同导入
-      if (ctx.hookImport && !finalCode.includes(ctx.hookImport)) {
-        // Only consider existing translation calls inside script blocks to avoid
-        // template-generated $t(...) from triggering import insertion.
-        let hasCall = false;
-        try {
-          const scriptText =
-            (descriptor.script && descriptor.script.content) ||
-            (descriptor.scriptSetup && descriptor.scriptSetup.content) ||
-            "";
-          if (scriptText) {
-            hasCall =
-              /\$t\(['"]/.test(scriptText) ||
-              /\bi18n\.t\(/.test(scriptText) ||
-              /\bi18n\.global\.t\(/.test(scriptText);
-          }
-        } catch (e) {
-          hasCall = false;
-        }
-        if (scriptReplaced || hasCall) {
-          // Vue: 优先插入到 <script setup> 或 <script> 标签内部首行，避免跑到 <template> 之前
-          const scriptTagReg = /<script[^>]*setup[^>]*>/i;
-          const normalScriptTagReg = /<script(?![^>]*setup)[^>]*>/i;
-          let m =
-            scriptTagReg.exec(finalCode) || normalScriptTagReg.exec(finalCode);
-          const importLine = `\n${ctx.hookImport}${
-            ctx.hookImport.trim().endsWith(";") ? "" : ";"
-          }\n`;
-          if (m) {
-            const insertPos = m.index + m[0].length;
-            finalCode =
-              finalCode.slice(0, insertPos) +
-              importLine +
-              finalCode.slice(insertPos);
-          } else {
-            // 没有脚本标签，兜底使用通用逻辑（会放在文件顶部）
-            finalCode = Utils.insertImports(finalCode, ctx.hookImport);
-          }
-        }
+      // Import injection: only attempt AST-based insertion when we actually
+      // replaced content in script blocks. This avoids injecting imports when
+      // no script-level changes were made (e.g. only template changes).
+      if (ctx.hookImport && scriptReplaced) {
+        // Delegate to Utils.insertImports which parses hookImport and the
+        // file's script AST to decide whether merging/insertion is necessary.
+        finalCode = Utils.insertImports(finalCode, ctx.hookImport);
       }
-      FileIO.handleWriteStream(filePath, finalCode, () => {});
+      try {
+        await Utils.writeFileAsync(filePath, finalCode);
+      } catch (e) {
+        throw e;
+      }
       // 组装返回时去除占位前缀，并保持 tpl/script 两段顺序：所有 tpl 后跟 script
       const tplValues: string[] = [];
       const scriptValues: string[] = [];
@@ -2005,6 +2062,33 @@ export class Utils {
 
   static insertImports(content: string, hookImport: string) {
     // AST-based import insertion & merging to handle different quoting/formatting styles.
+    // helper: detect preferred quote style from existing imports in a text
+    const detectQuoteStyle = (text: string) => {
+      const importRegex = /from\s+(['"])([^'"\n]+)\1/g;
+      let single = 0,
+        dbl = 0;
+      let m: RegExpExecArray | null;
+      while ((m = importRegex.exec(text))) {
+        if (m[1] === "'") single++;
+        else dbl++;
+      }
+      return single >= dbl ? "'" : '"';
+    };
+
+    const buildImportText = (spec: any, moduleName: string, quote: string) => {
+      const parts: string[] = [];
+      if (spec && spec.default) parts.push(spec.default);
+      if (spec && spec.namespace) parts.push(`* as ${spec.namespace}`);
+      if (spec && spec.named && spec.named.size) {
+        parts.push(`{ ${Array.from(spec.named).join(", ")} }`);
+      }
+      const q = quote || "'";
+      return `import ${parts.join(", ")} from ${q}${moduleName}${q};`;
+    };
+
+    let hookModule: string | null = null;
+    let hookSpec: any = null;
+
     try {
       const hookAst: any = babelParser.parse(hookImport, {
         sourceType: "module",
@@ -2019,9 +2103,8 @@ export class Utils {
         null;
       if (!hookNode || !hookNode.source || !hookNode.source.value)
         throw new Error("invalid hookImport");
-
-      const hookModule = hookNode.source.value;
-      const hookSpec: any = {
+      hookModule = hookNode.source.value;
+      hookSpec = {
         default: null,
         namespace: null,
         named: new Set<string>(),
@@ -2058,7 +2141,8 @@ export class Utils {
           sourceType: "module",
           plugins: ["typescript", "jsx"],
           ranges: true,
-        });
+          locations: true,
+        } as any);
       } catch (e) {
         ast = null;
       }
@@ -2130,7 +2214,8 @@ export class Utils {
           if (allNamed.size)
             parts.push(`{ ${Array.from(allNamed).join(", ")} }`);
 
-          const newImport = `import ${parts.join(", ")} from '${hookModule}';`;
+          let newImport = `import ${parts.join(", ")} from '${hookModule}';`;
+          if (!newImport.endsWith("\n")) newImport = newImport + "\n";
           const s =
             existingImportNode.start != null ? existingImportNode.start : 0;
           const e = existingImportNode.end != null ? existingImportNode.end : 0;
@@ -2140,26 +2225,38 @@ export class Utils {
         }
       } else {
         const insertPos = lastImportEnd || 0;
-        const importText =
-          hookImport.replace(/^\n+/, "") +
-          (hookImport.endsWith("\n") ? "" : "\n");
+        const quote = detectQuoteStyle(scriptContent) || "'";
+        const importText = buildImportText(hookSpec, hookModule, quote) + "\n";
         if (insertPos === 0) ms.prepend(importText);
         else ms.appendLeft(insertPos, importText);
       }
 
-      const newScript = ms.toString();
-      const newContent =
+      let newScript = ms.toString();
+      let newContent =
         content.slice(0, scriptStart) + newScript + content.slice(scriptEnd);
+      // normalize missing newline between consecutive import statements like:
+      // from 'a'import b from 'c'  => insert newline after module string
+      newContent = newContent.replace(
+        /from\s+((?:'[^']*'|"[^"]*"))\s*(?=import\b)/g,
+        "from $1\n"
+      );
       return newContent;
     } catch (e) {
       // fallback: text insertion
       try {
         const importRegex: RegExp =
-          /^import[\s\S]*?from\s+['"][^'\"]+['"];?\s*/gm;
+          /^import[\s\S]*?from\s+(['"])([^'"\n]+)\1;?\s*/gm;
         const imports = content.match(importRegex) || [];
-        if (content.includes(hookImport)) return content;
-        let importText = hookImport.replace(/^\n+/, "");
-        importText = importText.endsWith("\n") ? importText : importText + "\n";
+        // If module already imported (regardless of spacing/quote), skip
+        const moduleRe = new RegExp(
+          `from\\s+(['"])${hookModule.replace(
+            /[-/\\^$*+?.()|[\]{}]/g,
+            "\\$&"
+          )}\\1`
+        );
+        if (moduleRe.test(content)) return content;
+        const quote = detectQuoteStyle(content) || "'";
+        const importText = buildImportText(hookSpec, hookModule, quote) + "\n";
         if (imports.length === 0) {
           if (content.startsWith("#!")) {
             const firstNewline = content.indexOf("\n");
@@ -2177,9 +2274,14 @@ export class Utils {
         const lastIndexRaw = content.lastIndexOf(last) + last.length;
         const prefix = content.slice(0, lastIndexRaw);
         let suffix = content.slice(lastIndexRaw);
-        const prefixNorm = prefix.replace(/\n+$/, "\n");
-        const suffixNorm = suffix.replace(/^\n+/, "");
-        return prefixNorm + importText + suffixNorm;
+        const prefixNorm = prefix.replace(/\n*$/, "\n");
+        const suffixNorm = suffix.replace(/^\n*/, "");
+        let result = prefixNorm + importText + suffixNorm;
+        result = result.replace(
+          /from\s+((?:'[^']*'|"[^"]*"))\s*(?=import\b)/g,
+          "from $1\n"
+        );
+        return result;
       } catch (ee) {
         return content;
       }
