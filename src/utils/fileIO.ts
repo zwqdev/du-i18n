@@ -1,11 +1,11 @@
-import * as vscode from 'vscode';
-import { Message, MessageType } from './message';
-import { Utils } from './index';
+import * as vscode from "vscode";
+import { Message, MessageType } from "./message";
+import { Utils } from "./index";
 
-const fs = require('fs');
-const path = require('path');
-const isEmpty = require('lodash/isEmpty');
-const isObject = require('lodash/isObject');
+const fs = require("fs");
+const path = require("path");
+const isEmpty = require("lodash/isEmpty");
+const isObject = require("lodash/isObject");
 
 /**
  * 文件IO操作
@@ -52,7 +52,7 @@ export class FileIO {
     const files = await FileIO.getFiles(filePaths);
 
     if (files.length === 0) {
-      return '';
+      return "";
     }
 
     const newFiles = files.filter((file: any) => {
@@ -61,7 +61,7 @@ export class FileIO {
     });
 
     if (newFiles.length === 0) {
-      return '';
+      return "";
     }
 
     // 离当前文件最近的文件夹
@@ -85,7 +85,7 @@ export class FileIO {
   static async getBaseFilePath(
     curFilePath: string,
     fileName: string,
-    filePaths: string = '**/package.json'
+    filePaths: string = "**/package.json"
   ) {
     const basePath = await FileIO.getBasePath(curFilePath, filePaths);
     return path.join(basePath, fileName);
@@ -105,7 +105,7 @@ export class FileIO {
   ) {
     let newText = conentObj;
     if (isObject(conentObj)) {
-      newText = JSON.stringify(conentObj, null, '\t');
+      newText = JSON.stringify(conentObj, null, "\t");
     }
     const filePath = await FileIO.createFile(basePath, fileName, newText);
     // console.log("filePath", filePath);
@@ -126,7 +126,7 @@ export class FileIO {
   ) {
     let newText = conentObj;
     if (isObject(conentObj)) {
-      newText = JSON.stringify(conentObj, null, '\t');
+      newText = JSON.stringify(conentObj, null, "\t");
     }
     const filePath = await FileIO.createDirFile(basePath, fileName, newText);
     // console.log("filePath", filePath);
@@ -143,7 +143,7 @@ export class FileIO {
   static async createFile(
     basePath: string,
     fileName: string,
-    content: any = ''
+    content: any = ""
   ) {
     let newFilePath = await FileIO.getBaseFilePath(basePath, fileName);
     // console.log('newFilePath', newFilePath, newText)
@@ -163,7 +163,7 @@ export class FileIO {
   static async createDirFile(
     basePath: string,
     fileName: string,
-    content: any = ''
+    content: any = ""
   ) {
     fs.mkdirSync(basePath, { recursive: true });
     const newFilePath = path.join(basePath, fileName);
@@ -184,7 +184,7 @@ export class FileIO {
       fs.writeFileSync(filePath, str);
       return true;
     } catch (e) {
-      console.error('writeFileToLine e', e);
+      console.error("writeFileToLine e", e);
       return false;
     }
   }
@@ -234,7 +234,7 @@ export class FileIO {
   static getFolderFiles(folderPath: string, isUri: boolean = false) {
     return new Promise((resolve, reject) => {
       if (!folderPath) {
-        reject('文件夹路径不能为空');
+        reject("文件夹路径不能为空");
         return;
       }
 
@@ -251,7 +251,7 @@ export class FileIO {
           return new Promise<void>((resolve, reject) => {
             fs.stat(filePath, (err, stats) => {
               if (err) {
-                console.error('stat error', err);
+                console.error("stat error", err);
                 return reject(err);
               }
 
@@ -305,18 +305,18 @@ export class FileIO {
     let writerStream = fs.createWriteStream(filePath);
 
     // 使用 utf8 编码写入数据
-    writerStream.write(data, 'UTF8');
+    writerStream.write(data, "UTF8");
 
     // 标记文件末尾
     writerStream.end();
 
     // 处理流事件 --> finish、error
-    writerStream.on('finish', function () {
+    writerStream.on("finish", function () {
       // console.log("写入完成。");
       callback();
     });
 
-    writerStream.on('error', function (err) {
+    writerStream.on("error", function (err) {
       console.log(err.stack);
     });
   }
@@ -327,25 +327,25 @@ export class FileIO {
    * @param callback
    */
   static handleReadStream(filePath: string, callback: Function) {
-    let data = '';
+    let data = "";
 
     // 创建可读流
     let readerStream = fs.createReadStream(filePath);
 
     // 设置编码为 utf8。
-    readerStream.setEncoding('UTF8');
+    readerStream.setEncoding("UTF8");
 
     // 处理流事件 --> data, end, and error
-    readerStream.on('data', function (chunk) {
+    readerStream.on("data", function (chunk) {
       data += chunk;
     });
 
-    readerStream.on('end', function () {
+    readerStream.on("end", function () {
       // console.log(data);
       callback(data);
     });
 
-    readerStream.on('error', function (err) {
+    readerStream.on("error", function (err) {
       console.log(err.stack);
     });
   }
@@ -358,27 +358,27 @@ export class FileIO {
    */
   static writeJsonFileSync(filePath: string, text: string) {
     try {
-      const data = fs.readFileSync(filePath, 'utf-8');
-      const index = data.lastIndexOf('}');
+      const data = fs.readFileSync(filePath, "utf-8");
+      const index = data.lastIndexOf("}");
       if (index > -1) {
         // 判断前面是否需要添加逗号
-        const lastComma = data.lastIndexOf(',', index);
-        let content = '';
+        const lastComma = data.lastIndexOf(",", index);
+        let content = "";
         if (lastComma > -1) {
           const s = data.substring(lastComma + 1, index);
-          content = s.replace(/[\t\n\s]/g, '');
+          content = s.replace(/[\t\n\s]/g, "");
         }
         let newText = content ? `,${text}` : text;
-        let arr = (newText || '').split('\n');
+        let arr = (newText || "").split("\n");
         newText = arr
-          .map((c, i) => (i < arr.length - 1 ? '\t' + c : c))
-          .join('\n');
+          .map((c, i) => (i < arr.length - 1 ? "\t" + c : c))
+          .join("\n");
         const newStr = data.slice(0, index) + newText + data.slice(index);
         return FileIO.writeFileToLine(filePath, newStr);
       }
       return false;
     } catch (e) {
-      console.error('writeJsonFileSync e', e);
+      console.error("writeJsonFileSync e", e);
       return false;
     }
   }
@@ -404,21 +404,21 @@ export class FileIO {
   ) {
     try {
       let newPath = await FileIO.getBaseFilePath(filePath, tempPaths);
-      newPath = newPath.replace(/\*/g, '');
+      newPath = newPath.replace(/\*/g, "");
       if (!fs.existsSync(newPath)) {
         FileIO.mkdirs(newPath);
       }
-      console.log('newPath', newPath);
-      let randFileName = '';
-      let newFilePath = '';
-      let content = '';
+      console.log("newPath", newPath);
+      let randFileName = "";
+      let newFilePath = "";
+      let content = "";
       if (tempFileName && /\.(json)$/.test(tempFileName)) {
         randFileName = tempFileName;
         newFilePath = path.join(newPath, randFileName);
         try {
-          const data = fs.readFileSync(newFilePath, 'utf-8');
+          const data = fs.readFileSync(newFilePath, "utf-8");
           if (data) {
-            const oldLangObj = eval(`(${data})`);
+            const oldLangObj = Utils.parseJsonSafe(data);
             const langObj = {
               ...oldLangObj,
             };
@@ -434,21 +434,21 @@ export class FileIO {
                 };
               });
             }
-            content = JSON.stringify(langObj, null, '\t');
+            content = JSON.stringify(langObj, null, "\t");
           }
         } catch (e) {}
       } else {
         if (isNeedRandSuffix) {
           // 随机生成文件名
-          randFileName = Utils.getRandFileName(pageEnName, '.json');
+          randFileName = Utils.getRandFileName(pageEnName, ".json");
         } else {
-          randFileName = pageEnName + '.json';
+          randFileName = pageEnName + ".json";
         }
         // 拼接文件路径
         newFilePath = path.join(newPath, randFileName);
       }
       if (!content) {
-        content = JSON.stringify(newLangObj, null, '\t');
+        content = JSON.stringify(newLangObj, null, "\t");
       }
       if (FileIO.writeFileToLine(newFilePath, content)) {
         cb(newFilePath, newLangObj);
@@ -483,11 +483,11 @@ export class FileIO {
       // 获取工作区根目录
       const workspaceRoot = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
       if (!workspaceRoot) {
-        throw new Error('未找到工作区根目录');
+        throw new Error("未找到工作区根目录");
       }
 
       if (!Array.isArray(tempLangs) || !tempLangs.length) {
-        Message.showMessage('未配置语言列表，无法合并', MessageType.WARNING);
+        Message.showMessage("未配置语言列表，无法合并", MessageType.WARNING);
         return;
       }
 
@@ -504,8 +504,8 @@ export class FileIO {
 
       // 检查临时目录是否存在
       if (!fs.existsSync(tempPath)) {
-        Message.showMessage('未找到临时翻译目录，无需合并', MessageType.INFO);
-        cb && cb(targetPath, 0, 'NO_TEMP_DIR');
+        Message.showMessage("未找到临时翻译目录，无需合并", MessageType.INFO);
+        cb && cb(targetPath, 0, "NO_TEMP_DIR");
         return;
       }
 
@@ -519,8 +519,8 @@ export class FileIO {
         (lang) => mergedTranslations[lang] && !isEmpty(mergedTranslations[lang])
       );
       if (!hasAnyContent) {
-        Message.showMessage('临时目录内没有可合并的内容', MessageType.INFO);
-        cb && cb(targetPath, 0, 'NO_CONTENT');
+        Message.showMessage("临时目录内没有可合并的内容", MessageType.INFO);
+        cb && cb(targetPath, 0, "NO_CONTENT");
         return;
       }
 
@@ -535,11 +535,11 @@ export class FileIO {
       const shouldDeleteTemp = await vscode.window.showInformationMessage(
         `翻译文件合并成功！共更新 ${processedFiles.length} 个语言文件。是否删除临时目录中的文件？`,
         { modal: false },
-        '删除临时文件',
-        '保留文件'
+        "删除临时文件",
+        "保留文件"
       );
 
-      if (shouldDeleteTemp === '删除临时文件') {
+      if (shouldDeleteTemp === "删除临时文件") {
         try {
           const tempFiles = (await FileIO.getFolderFiles(
             tempPath,
@@ -550,13 +550,13 @@ export class FileIO {
             `已删除 ${deletedCount} 个临时文件`
           );
         } catch (error) {
-          vscode.window.showErrorMessage('删除临时文件失败，请手动删除');
+          vscode.window.showErrorMessage("删除临时文件失败，请手动删除");
         }
       }
 
-      cb && cb(targetPath, processedFiles.length, 'SUCCESS');
+      cb && cb(targetPath, processedFiles.length, "SUCCESS");
     } catch (error) {
-      Message.showMessage('合并语言文件失败', MessageType.ERROR);
+      Message.showMessage("合并语言文件失败", MessageType.ERROR);
     }
   }
 
@@ -567,10 +567,10 @@ export class FileIO {
     pathPattern: string,
     workspaceRoot: string
   ): string {
-    let relativePath = pathPattern.replace(/\*/g, '');
+    let relativePath = pathPattern.replace(/\*/g, "");
 
     // 移除开头的斜杠，确保是相对路径
-    if (relativePath.startsWith('/') || relativePath.startsWith('\\')) {
+    if (relativePath.startsWith("/") || relativePath.startsWith("\\")) {
       relativePath = relativePath.substring(1);
     }
 
@@ -595,14 +595,14 @@ export class FileIO {
       const files = (await FileIO.getFolderFiles(tempPath, false)) as string[];
 
       for (const filePath of files) {
-        if (path.extname(filePath) === '.json') {
+        if (path.extname(filePath) === ".json") {
           try {
-            const fileContent = fs.readFileSync(filePath, 'utf-8');
+            const fileContent = fs.readFileSync(filePath, "utf-8");
             const jsonData = JSON.parse(fileContent);
 
             // 合并每种语言的翻译内容
             tempLangs.forEach((lang) => {
-              if (jsonData[lang] && typeof jsonData[lang] === 'object') {
+              if (jsonData[lang] && typeof jsonData[lang] === "object") {
                 Object.assign(mergedTranslations[lang], jsonData[lang]);
               }
             });
@@ -645,7 +645,7 @@ export class FileIO {
         const finalContent = { ...existingContent, ...newContent };
 
         // 写入文件
-        const formattedContent = JSON.stringify(finalContent, null, '\t');
+        const formattedContent = JSON.stringify(finalContent, null, "\t");
         FileIO.writeFileToLine(langFilePath, formattedContent);
 
         processedFiles.push(langFilePath);
@@ -666,7 +666,7 @@ export class FileIO {
     }
 
     try {
-      const fileContent = fs.readFileSync(filePath, 'utf-8');
+      const fileContent = fs.readFileSync(filePath, "utf-8");
       return JSON.parse(fileContent);
     } catch (error) {
       return {};
@@ -681,7 +681,7 @@ export class FileIO {
 
     for (const filePath of filePaths) {
       try {
-        if (path.extname(filePath) === '.json' && fs.existsSync(filePath)) {
+        if (path.extname(filePath) === ".json" && fs.existsSync(filePath)) {
           fs.unlinkSync(filePath);
           deletedCount++;
         }
@@ -708,17 +708,17 @@ export class FileIO {
   ) {
     try {
       let newPath = await FileIO.getBaseFilePath(filePath, langPaths);
-      newPath = newPath.replace(/\*/g, '');
+      newPath = newPath.replace(/\*/g, "");
       if (!fs.existsSync(newPath)) {
         FileIO.mkdirs(newPath);
       }
-      console.log('newPath', newPath);
+      console.log("newPath", newPath);
       // console.log('localLangObj', localLangObj);
       if (!isEmpty(localLangObj)) {
         Object.entries(localLangObj).forEach(([lang, obj]) => {
-          const langFileName = lang + '.json';
+          const langFileName = lang + ".json";
           const newFilePath = path.join(newPath, langFileName);
-          const content = JSON.stringify(obj, null, '\t');
+          const content = JSON.stringify(obj, null, "\t");
           FileIO.writeFileToLine(newFilePath, content);
         });
       }

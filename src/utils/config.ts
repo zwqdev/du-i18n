@@ -1,6 +1,7 @@
 import * as vscode from "vscode";
 import { API } from "./api";
 import { FileIO } from "./fileIO";
+import { Utils } from "./index";
 import * as fs from "fs";
 import * as path from "path";
 import { isEmpty } from "lodash";
@@ -204,7 +205,14 @@ export class Config {
     try {
       if (fs.existsSync(configAbsPath)) {
         const data = fs.readFileSync(configAbsPath, "utf-8");
-        if (data) applyConfig(eval(`(${data})`));
+        if (data) {
+          const parsed = Utils.parseJsonSafe(data);
+          if (parsed) {
+            applyConfig(parsed);
+          } else {
+            console.error("Invalid JSON in config file:", configAbsPath);
+          }
+        }
         return; // 已读取 .vscode 下配置
       }
     } catch (e) {
@@ -218,7 +226,11 @@ export class Config {
       if (/\.(json)$/.test(fileName)) {
         try {
           const data = fs.readFileSync(fsPath, "utf-8");
-          if (data) applyConfig(eval(`(${data})`));
+          if (data) {
+            const parsed = Utils.parseJsonSafe(data);
+            if (parsed) applyConfig(parsed);
+            else console.error("Invalid JSON in config file:", fsPath);
+          }
         } catch (e) {
           console.error(e);
         }
@@ -469,7 +481,7 @@ export class Config {
             try {
               const data = fs.readFileSync(fsPath, "utf-8");
               if (data) {
-                const langObj = eval(`(${data})`);
+                const langObj = Utils.parseJsonSafe(data) || {};
                 if (!isEmpty(langObj)) {
                   Object.entries(langObj).forEach(([lang, obj]) => {
                     if (!this.localLangObj[lang]) {
@@ -498,7 +510,7 @@ export class Config {
             try {
               const data = fs.readFileSync(fsPath, "utf-8");
               if (data) {
-                const langObj = eval(`(${data})`);
+                const langObj = Utils.parseJsonSafe(data) || {};
                 if (!isEmpty(langObj)) {
                   if (!this.localLangObj[lang]) {
                     this.localLangObj[lang] = {};
@@ -599,7 +611,7 @@ export class Config {
         inValidType = true;
         const data = fs.readFileSync(fsPath, "utf-8");
         if (data) {
-          const obj = eval(`(${data})`);
+          const obj = Utils.parseJsonSafe(data) || {};
           sourceData[lang] = {
             ...obj,
           };
@@ -659,7 +671,7 @@ export class Config {
           if (/\.(json)$/.test(fileName)) {
             const data = fs.readFileSync(fsPath, "utf-8");
             if (data) {
-              const langObj = eval(`(${data})`);
+              const langObj = Utils.parseJsonSafe(data) || {};
               if (!isEmpty(langObj)) {
                 const newObj: any = {};
                 const defaultLang = this.defaultLang;
@@ -832,7 +844,7 @@ export class Config {
         try {
           const data = fs.readFileSync(fsPath, "utf-8");
           if (data) {
-            const i18nLangObj = eval(`(${data})`);
+            const i18nLangObj = Utils.parseJsonSafe(data) || {};
             this.handleSendToOnline(i18nLangObj, pageEnName, cb);
           }
         } catch (e) {
@@ -866,7 +878,7 @@ export class Config {
           try {
             const data = fs.readFileSync(fsPath, "utf-8");
             if (data) {
-              const i18nLangObj = eval(`(${data})`);
+              const i18nLangObj = Utils.parseJsonSafe(data) || {};
               this.handleSendToOnline(i18nLangObj, pageEnName, cb);
             }
           } catch (e) {

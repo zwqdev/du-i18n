@@ -30,6 +30,30 @@ const SPLIT = "---$$_$$---";
 export const DEFAULT_TRANS_BATCH_SIZE = 10;
 
 export class Utils {
+  /**
+   * Safely parse JSON-like text. If parse fails, logs and returns null.
+   * Accepts strings that look like JSON objects/arrays. Does NOT use eval.
+   */
+  static parseJsonSafe<T = any>(text: string): T | null {
+    if (!text || typeof text !== "string") return null;
+    try {
+      return JSON.parse(text);
+    } catch (e) {
+      try {
+        // Some files may contain trailing commas or single quotes; attempt a tolerant cleanup
+        const cleaned = text
+          .replace(
+            /([\{\[,]?)\s*(["'])(.*?)\2\s*:/g,
+            (m, p1, q, inner) => `${p1}"${inner}":`
+          ) // normalize quoted keys
+          .replace(/,\s*([}\]])/g, "$1"); // remove trailing commas
+        return JSON.parse(cleaned);
+      } catch (err) {
+        console.error("parseJsonSafe parse error", err);
+        return null;
+      }
+    }
+  }
   // Promise wrapper for FileIO.handleWriteStream to ensure writes complete before returning
   static writeFileAsync(filePath: string, content: string) {
     return new Promise<void>((resolve, reject) => {
@@ -323,7 +347,7 @@ export class Utils {
         return {};
       }
       const dataStr = data.substring(startIndex, endIndex + 1);
-      const langObj = eval(`(${dataStr})`);
+      const langObj = Utils.parseJsonSafe(dataStr) || {};
       return langObj;
     };
     const sourcePath = "**/src/i18n/locale/**";
@@ -2614,7 +2638,10 @@ export class Utils {
         try {
           const data = fs.readFileSync(fsPath, "utf-8");
           if (data) {
-            const localLangObj = eval(`(${data})`);
+            const localLangObj = Utils.parseJsonSafe(data);
+            if (!localLangObj) {
+              console.error("parse json failed in translateLocalFile:", fsPath);
+            }
             if (localLangObj) {
               const zhSource = localLangObj[defaultLang];
               if (!isEmpty(zhSource)) {

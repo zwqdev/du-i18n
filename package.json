@@ -2,8 +2,8 @@
   "name": "i18n",
   "displayName": "I18N",
   "description": "vscode国际化多语言解决方案",
-  "author": "程天庆",
-  "publisher": "DewuTeam",
+  "author": "oterman",
+  "publisher": "oterman",
   "version": "1.4.1",
   "engines": {
     "vscode": "^1.59.0"

@@ -23,6 +23,10 @@ let langObj: LangType = null;
 export async function activate(context: vscode.ExtensionContext) {
   try {
     const config = new Config();
+    // Track recent saves initiated from the editor to avoid duplicate
+    // refreshes when file system watcher emits the same change.
+    const recentEditorSaves: Map<string, number> = new Map();
+    const SAVE_IGNORE_MS = 500; // ignore fs events within 500ms of an editor save
     // 初始化
     config.init(context, () => {
       // 渲染语言
@@ -64,6 +68,12 @@ export async function activate(context: vscode.ExtensionContext) {
           if (fileReg.test(fileName)) {
             // 渲染语言
             VSCodeUI.renderDecoration(config);
+            // record this save so the fileWatcher can ignore the subsequent fs event
+            try {
+              recentEditorSaves.set(fileName, Date.now());
+            } catch (e) {
+              // ignore map errors
+            }
           }
         }
       },
@@ -84,6 +94,60 @@ export async function activate(context: vscode.ExtensionContext) {
         // onlineOnDidChangeActiveTextEditor();
       }
     });
+
+    // Watch filesystem changes (covers external changes, git plugin undos, etc.)
+    // Debounce and filter by configured file pattern to avoid excessive refreshes.
+    try {
+      // Prefer an explicit watcher glob if provided by config, otherwise use a narrower default
+      const defaultWatchGlob = "**/*.{ts,tsx,js,jsx,vue,html,json}";
+      const watchGlob =
+        typeof (config as any).getWatcherGlob === "function"
+          ? (config as any).getWatcherGlob() || defaultWatchGlob
+          : defaultWatchGlob;
+      const fileWatcher = vscode.workspace.createFileSystemWatcher(watchGlob);
+      context.subscriptions.push(fileWatcher);
+      const filesChanged = new Set<string>();
+      let fsDebounceTimer: any = null;
+
+      const scheduleFsRefresh = async (uri: vscode.Uri) => {
+        try {
+          const filePath = uri.fsPath;
+          const fileReg = config.getFileReg && config.getFileReg();
+          try {
+            const now = Date.now();
+            const lastSave = recentEditorSaves.get(filePath);
+            if (lastSave && now - lastSave < SAVE_IGNORE_MS) {
+              // recent save from editor — skip this fs-triggered refresh
+              recentEditorSaves.delete(filePath);
+              return;
+            }
+          } catch (e) {
+            // ignore map lookup errors
+          }
+          // If config.getFileReg returns a RegExp, test against it; otherwise refresh for all
+          if (fileReg instanceof RegExp) {
+            if (!fileReg.test(filePath)) return;
+          }
+          filesChanged.add(filePath);
+          if (fsDebounceTimer) clearTimeout(fsDebounceTimer);
+          fsDebounceTimer = setTimeout(async () => {
+            filesChanged.clear();
+            // Refresh internal language cache and re-render decorations
+            await config.refreshGlobalLangObj();
+            VSCodeUI.renderDecoration(config);
+            fsDebounceTimer = null;
+          }, 300);
+        } catch (e) {
+          console.error("fileWatcher schedule error", e);
+        }
+      };
+
+      fileWatcher.onDidChange((uri) => scheduleFsRefresh(uri));
+      fileWatcher.onDidCreate((uri) => scheduleFsRefresh(uri));
+      fileWatcher.onDidDelete((uri) => scheduleFsRefresh(uri));
+    } catch (e) {
+      console.error("failed to create file watcher", e);
+    }
 
     // 监听命令-扫描中文
     context.subscriptions.push(
@@ -190,86 +254,121 @@ export async function activate(context: vscode.ExtensionContext) {
                     "所有文件已被 scanIgnoreGlobs 规则忽略"
                   );
                 }
-                // Show a status bar item while batch scanning
+                // Use vscode.withProgress to show cancellable progress and avoid custom statusBar UI
                 const total = validFiles.length;
-                let processedCount = 0;
-                const statusBar = vscode.window.createStatusBarItem(
-                  vscode.StatusBarAlignment.Left
-                );
-                statusBar.text = `$(sync~spin) 批量扫描 0/${total}`;
-                statusBar.show();
+                if (!total) return;
 
-                const tasks = validFiles.map((file: any, i: number) =>
-                  (async () => {
-                    try {
-                      const fileName = file;
-                      const prefixKey = config.getPrefixKey(
-                        fileName,
-                        i.toString()
-                      );
-                      const pageEnName = config.generatePageEnName(fileName);
-                      const tempFileName = config.getTempFileName();
-                      const isNeedRandSuffix = config.getIsNeedRandSuffix();
-                      const isHookImport = config.getHookImport();
+                Promise.resolve(
+                  vscode.window.withProgress(
+                    {
+                      location: vscode.ProgressLocation.Notification,
+                      title: `批量扫描 ${total} 个文件`,
+                      cancellable: true,
+                    },
+                    async (progress, token) => {
+                      let processedCount = 0;
+                      let cancelled = false;
+                      token.onCancellationRequested(() => {
+                        cancelled = true;
+                      });
 
-                      // Use astProcessFile which returns a Promise<newLangObj|null>
-                      let newLangObj: any = null;
-                      try {
-                        newLangObj = await Utils.astProcessFile(
-                          fileName,
-                          initLang,
-                          keys,
-                          defaultLang,
-                          prefixKey,
-                          isHookImport,
-                          { skipExtractCallees: config.getSkipExtractCallees() }
-                        );
-                      } catch (e) {
-                        console.error("astProcessFile error", e);
-                        newLangObj = null;
-                      }
+                      const requestList = validFiles.map(
+                        (file: any, i: number) => {
+                          return async () => {
+                            if (cancelled) return null;
+                            try {
+                              const fileName = file;
+                              const prefixKey = config.getPrefixKey(
+                                fileName,
+                                i.toString()
+                              );
+                              const pageEnName =
+                                config.generatePageEnName(fileName);
+                              const tempFileName = config.getTempFileName();
+                              const isNeedRandSuffix =
+                                config.getIsNeedRandSuffix();
+                              const isHookImport = config.getHookImport();
 
-                      if (newLangObj) {
-                        await new Promise((resolve) => {
-                          FileIO.writeIntoTempFile(
-                            tempPaths,
-                            fileName,
-                            newLangObj,
-                            pageEnName,
-                            tempFileName,
-                            isNeedRandSuffix,
-                            async () => {
-                              if (config.isOnline()) {
-                                config.handleSendToOnline(
-                                  newLangObj,
-                                  pageEnName,
-                                  async () => {
-                                    resolve(null);
+                              // Use astProcessFile which returns a Promise<newLangObj|null>
+                              let newLangObj: any = null;
+                              try {
+                                newLangObj = await Utils.astProcessFile(
+                                  fileName,
+                                  initLang,
+                                  keys,
+                                  defaultLang,
+                                  prefixKey,
+                                  isHookImport,
+                                  {
+                                    skipExtractCallees:
+                                      config.getSkipExtractCallees(),
                                   }
                                 );
-                              } else {
-                                resolve(null);
+                              } catch (e) {
+                                console.error("astProcessFile error", e);
+                                newLangObj = null;
+                              }
+
+                              if (cancelled) return null;
+
+                              if (newLangObj) {
+                                await new Promise((resolve) => {
+                                  FileIO.writeIntoTempFile(
+                                    tempPaths,
+                                    fileName,
+                                    newLangObj,
+                                    pageEnName,
+                                    tempFileName,
+                                    isNeedRandSuffix,
+                                    async () => {
+                                      if (config.isOnline()) {
+                                        config.handleSendToOnline(
+                                          newLangObj,
+                                          pageEnName,
+                                          async () => {
+                                            resolve(null);
+                                          }
+                                        );
+                                      } else {
+                                        resolve(null);
+                                      }
+                                    }
+                                  );
+                                });
+                              }
+                            } catch (e) {
+                              console.error(
+                                "multiScanAndGenerate file error",
+                                e
+                              );
+                            } finally {
+                              processedCount++;
+                              const increment = total ? (1 / total) * 100 : 100;
+                              progress.report({
+                                message: `批量扫描 ${processedCount}/${total}`,
+                                increment,
+                              });
+                              if (processedCount === total && !cancelled) {
+                                await handleRefresh();
                               }
                             }
-                          );
-                        });
-                      }
-                    } catch (e) {
-                      console.error("multiScanAndGenerate file error", e);
-                    } finally {
-                      processedCount++;
-                      statusBar.text = `$(sync~spin) 批量扫描 ${processedCount}/${total}`;
-                      if (processedCount === total) {
-                        statusBar.hide();
-                        statusBar.dispose();
-                        handleRefresh();
+                            return null;
+                          };
+                        }
+                      );
+
+                      const concurrency = 4; // reasonable default
+                      try {
+                        await Utils.limitedParallelRequests(
+                          requestList,
+                          concurrency
+                        );
+                      } catch (e) {
+                        if (!cancelled) console.error(e);
                       }
                     }
-                  })()
-                );
-
-                // fire-and-forget; allow tasks to run concurrently
-                Promise.all(tasks).catch((e) => console.error(e));
+                  )
+                ).catch((e) => console.error("withProgress error", e));
               })
               .catch((e) => {
                 console.error("getFolderFiles e", e);
@@ -333,7 +432,15 @@ export async function activate(context: vscode.ExtensionContext) {
                 if (!data) {
                   return;
                 }
-                const localLangObj = eval(`(${data})`);
+                const localLangObj =
+                  require("./utils").Utils.parseJsonSafe(data);
+                if (!localLangObj) {
+                  Message.showMessage(
+                    "解析本地 JSON 失败，请检查文件格式",
+                    MessageType.WARNING
+                  );
+                  return;
+                }
 
                 const login = await Utils.getCookie(config.getAccount());
 
@@ -1143,7 +1250,17 @@ export async function activate(context: vscode.ExtensionContext) {
             let defaultContent: any = {};
             try {
               const raw = fs.readFileSync(fsPathMap[defaultLang], "utf-8");
-              if (raw) defaultContent = eval("(" + raw + ")");
+              if (raw) {
+                const parsed = Utils.parseJsonSafe(raw);
+                if (parsed) defaultContent = parsed;
+                else {
+                  Message.showMessage(
+                    "读取默认语言文件失败：JSON 格式错误",
+                    MessageType.ERROR
+                  );
+                  return;
+                }
+              }
             } catch (e) {
               Message.showMessage("读取默认语言文件失败");
               return;
