@@ -2374,6 +2374,22 @@ export class Utils {
       }
 
       let newScript = ms.toString();
+      // If the script block starts immediately after the opening tag (no newline),
+      // ensure we add a leading newline so inserted imports don't sit on the same
+      // line as the tag: `<script setup>import ...` -> `<script setup>\nimport ...`.
+      try {
+        if (
+          typeof scriptStart === "number" &&
+          scriptStart > 0 &&
+          content[scriptStart - 1] === ">" &&
+          !newScript.startsWith("\n")
+        ) {
+          newScript = "\n" + newScript;
+        }
+      } catch (e) {
+        // ignore and continue
+      }
+
       let newContent =
         content.slice(0, scriptStart) + newScript + content.slice(scriptEnd);
       // normalize missing newline between consecutive import statements like:
