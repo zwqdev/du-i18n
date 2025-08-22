@@ -774,8 +774,12 @@ export class Utils {
       return `${prefixKey}${keyOffset + idx}`; // 叠加偏移，确保与最终 foundList 全局序号一致
     };
 
-    const replacements: Array<{ start: number; end: number; text: string }> =
-      [];
+    const replacements: Array<{
+      start: number;
+      end: number;
+      text: string;
+      jsxWrap?: boolean; // true when this replacement must be wrapped with {} in JSX attributes
+    }> = [];
     const isObjectKey = (path: any) => {
       if (!path || !path.parent) return false;
       const p = path.parent;
@@ -836,10 +840,20 @@ export class Utils {
         // Replace by source range
         if (path.node.start != null && path.node.end != null) {
           const text = `${scriptCalleeName}('${key}')`;
+          // detect whether this node is the direct value of a JSX attribute
+          let inJsxAttr = false;
+          const jsxAttrPath = path.findParent((p: any) =>
+            Boolean(p && p.isJSXAttribute && p.isJSXAttribute())
+          );
+          if (jsxAttrPath && jsxAttrPath.node && jsxAttrPath.node.value) {
+            // only mark when the attribute's value node equals this node
+            inJsxAttr = jsxAttrPath.node.value === path.node;
+          }
           replacements.push({
             start: path.node.start,
             end: path.node.end,
             text,
+            jsxWrap: inJsxAttr,
           });
         }
       },
@@ -882,10 +896,19 @@ export class Utils {
           text = `${scriptCalleeName}('${key}', [${exprCodes.join(", ")}])`;
         }
         if (path.node.start != null && path.node.end != null) {
+          // detect whether this node is the direct value of a JSX attribute
+          let inJsxAttr = false;
+          const jsxAttrPath = path.findParent((p: any) =>
+            Boolean(p && p.isJSXAttribute && p.isJSXAttribute())
+          );
+          if (jsxAttrPath && jsxAttrPath.node && jsxAttrPath.node.value) {
+            inJsxAttr = jsxAttrPath.node.value === path.node;
+          }
           replacements.push({
             start: path.node.start,
             end: path.node.end,
             text,
+            jsxWrap: inJsxAttr,
           });
         }
       },
@@ -906,10 +929,12 @@ export class Utils {
             trailing
           );
         if (path.node.start != null && path.node.end != null) {
+          // JSXText always inside JSX, so require wrapping handled in the JSX-level handler
           replacements.push({
             start: path.node.start,
             end: path.node.end,
             text,
+            jsxWrap: true,
           });
         }
       },
@@ -958,6 +983,7 @@ export class Utils {
               start: attr.value.start,
               end: attr.value.end,
               text,
+              jsxWrap: true,
             });
           }
         } else if (t.isJSXExpressionContainer(attr.value)) {
@@ -982,6 +1008,7 @@ export class Utils {
                 start: attr.value.start,
                 end: attr.value.end,
                 text,
+                jsxWrap: true,
               });
             }
           }
@@ -1006,15 +1033,21 @@ export class Utils {
             !trimmed.startsWith("{") &&
             !trimmed.endsWith("}")
           ) {
-            // find previous non-whitespace char before the replacement start
-            let idx = r.start - 1;
-            while (idx >= 0 && /[ \t\r\n]/.test(scriptContent[idx])) idx--;
-            if (idx >= 0 && scriptContent[idx] === "=") {
+            // Only wrap when AST told us this replacement is inside a JSX attribute
+            if (r.jsxWrap) {
+              // find previous non-whitespace char before the replacement start (for safety)
+              let idx = r.start - 1;
+              while (idx >= 0 && /[ \t\r\n]/.test(scriptContent[idx])) idx--;
               // Avoid wrapping when '=' is part of '==' or '===' (e.g. in comparisons)
               const prevChar = idx - 1 >= 0 ? scriptContent[idx - 1] : null;
-              if (prevChar !== "=") {
-                // wrap with braces and preserve original surrounding whitespace
-                // replace without using the /s flag for compatibility
+              if (idx >= 0 && scriptContent[idx] === "=" && prevChar !== "=") {
+                r.text = txt.replace(
+                  /^(\s*)([\s\S]*?)(\s*)$/,
+                  (m: string, pre: string, inner: string, post: string) =>
+                    `${pre}{${inner}}${post}`
+                );
+              } else {
+                // If not immediately after '=', still wrap because JSX attribute expects an expression container
                 r.text = txt.replace(
                   /^(\s*)([\s\S]*?)(\s*)$/,
                   (m: string, pre: string, inner: string, post: string) =>
