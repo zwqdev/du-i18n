@@ -14,7 +14,7 @@ v14.17.3
 
 ## 简短说明
 
-一个面向本地开发的 i18n 辅助 VS Code 扩展，提供：代码中中文扫描与提取、提取回显、在线翻译、语言切换与分析统计等功能。
+一个面向本地开发的 i18n 辅助 VS Code 扩展，提供：代码中中文扫描与提取、提取回显、在线翻译、补全语言文件、语言切换与分析统计等功能。
 
 ## 快速开始
 
@@ -41,7 +41,7 @@ v14.17.3
   "transBatchSize": 10,
   "isNeedRandSuffix": true,
   "hookImport": "", //自动注入import
-  "skipExtractCallees": false,
+  "skipExtractCallees": [],
   "scanIgnoreGlobs": ["**/node_modules/**", "**/dist/**"],
   "watcherGlob": "**/*.{ts,tsx,js,jsx,vue,html,json}"
 }

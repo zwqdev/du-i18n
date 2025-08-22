@@ -5,6 +5,7 @@ import { FileIO } from "./utils/fileIO";
 import { Config } from "./utils/config";
 import { MessageType, Message } from "./utils/message";
 const fs = require("fs");
+const fsp = fs.promises;
 const path = require("path");
 const isEmpty = require("lodash/isEmpty");
 import { ViewLoader } from "./view/ViewLoader";
@@ -404,7 +405,13 @@ export async function activate(context: vscode.ExtensionContext) {
                 if (!/\.(json)$/.test(fileName)) {
                   return;
                 }
-                const data = fs.readFileSync(fileName, "utf-8");
+                let data: string | null = null;
+                try {
+                  data = await fsp.readFile(fileName, "utf-8");
+                } catch (e) {
+                  console.error("read file error", e);
+                  return;
+                }
                 if (!data) {
                   return;
                 }
@@ -1121,12 +1128,17 @@ export async function activate(context: vscode.ExtensionContext) {
                 fsPathMap[lang] = fsPath;
               }
             });
-            if (!fsPathMap[defaultLang]) {
-              Message.showMessage(`缺少默认语言文件 ${defaultLang}.json`);
+            // Prefer using zh.json from configured langPaths as the source
+            const preferredSourceLang = "zh";
+            const sourceLang = fsPathMap[preferredSourceLang]
+              ? preferredSourceLang
+              : defaultLang;
+            if (!fsPathMap[sourceLang]) {
+              Message.showMessage(`缺少语言源文件 ${sourceLang}.json`);
               return;
             }
             const missing = allLangs.filter(
-              (l) => l && l !== defaultLang && !fsPathMap[l]
+              (l) => l && l !== sourceLang && !fsPathMap[l]
             );
             if (!missing.length) {
               Message.showMessage("没有需要补全的语言文件");
@@ -1135,7 +1147,7 @@ export async function activate(context: vscode.ExtensionContext) {
             // 读取默认语言内容
             let defaultContent: any = {};
             try {
-              const raw = fs.readFileSync(fsPathMap[defaultLang], "utf-8");
+              const raw = await fsp.readFile(fsPathMap[sourceLang], "utf-8");
               if (raw) {
                 const parsed = Utils.parseJsonSafe(raw);
                 if (parsed) defaultContent = parsed;
@@ -1165,60 +1177,81 @@ export async function activate(context: vscode.ExtensionContext) {
             const statusBar = vscode.window.createStatusBarItem(
               vscode.StatusBarAlignment.Left
             );
-            statusBar.text = `$(sync~spin) 生成缺失语言 0/${missing.length}`;
+            statusBar.text = `$(sync~spin) 生成缺失语言`;
             statusBar.show();
             let created = 0;
-            for (let i = 0; i < missing.length; i++) {
-              const lang = missing[i];
-              try {
-                // 构造 localLangObj 结构
-                const localLangObj: any = {
-                  [defaultLang]: { ...defaultContent },
-                };
+
+            try {
+              // 构造一个包含所有缺失语言的 localLangObj，一次性请求 LLM
+              const localLangObj: any = {
+                [sourceLang]: { ...defaultContent },
+              };
+              missing.forEach((lang) => {
                 localLangObj[lang] = {};
-                Object.keys(defaultContent).forEach(
-                  (k) => (localLangObj[lang][k] = "")
+                Object.keys(defaultContent).forEach((k) => {
+                  localLangObj[lang][k] = "";
+                });
+              });
+
+              // 一次性请求翻译，复用 statusBar 以显示批次进度
+              const llmRes = await Utils.getTransSourceObjByLlm(
+                localLangObj,
+                defaultLang,
+                cookie,
+                {
+                  reuseStatusBar: statusBar,
+                  label: "生成缺失语言",
+                  suppressBatchStatus: false,
+                },
+                { batchSize: config.getTransBatchSize() }
+              );
+
+              const transSourceObj = llmRes.transSourceObj;
+              const message = llmRes.message;
+
+              if (!transSourceObj || isEmpty(transSourceObj)) {
+                Message.showMessage(
+                  `生成失败: ${message || "无结果"}`,
+                  MessageType.WARNING
                 );
-                let transSourceObj: any = null;
-                let message = "";
-                const llmRes = await Utils.getTransSourceObjByLlm(
-                  localLangObj,
-                  defaultLang,
-                  cookie,
-                  { suppressBatchStatus: true },
-                  { batchSize: config.getTransBatchSize() }
-                );
-                transSourceObj = llmRes.transSourceObj;
-                message = llmRes.message;
-                if (transSourceObj && transSourceObj[lang]) {
-                  const mapped: any = {};
-                  Object.entries(defaultContent).forEach(([k, v]: any) => {
-                    mapped[k] = transSourceObj[lang][v] || "";
-                  });
-                  const targetDir = path.dirname(fsPathMap[defaultLang]);
-                  const targetPath = path.join(targetDir, `${lang}.json`);
-                  fs.writeFileSync(
-                    targetPath,
-                    JSON.stringify(mapped, null, "\t"),
-                    "utf-8"
-                  );
-                  created++;
-                } else {
-                  Message.showMessage(
-                    `生成 ${lang}.json 失败: ${message || "无结果"}`
-                  );
+              } else {
+                // 将翻译结果写入对应语言文件
+                const targetDir = path.dirname(fsPathMap[sourceLang]);
+                for (const lang of missing) {
+                  try {
+                    if (transSourceObj[lang]) {
+                      const mapped: any = {};
+                      Object.entries(defaultContent).forEach(([k, v]: any) => {
+                        mapped[k] = transSourceObj[lang][v] || "";
+                      });
+                      const targetPath = path.join(targetDir, `${lang}.json`);
+                      try {
+                        await fsp.writeFile(
+                          targetPath,
+                          JSON.stringify(mapped, null, "\t"),
+                          "utf-8"
+                        );
+                        created++;
+                      } catch (e) {
+                        console.error("write file error", e);
+                        Message.showMessage(`生成 ${lang}.json 失败`);
+                      }
+                    } else {
+                      Message.showMessage(
+                        `生成 ${lang}.json 失败: ${message || "无结果"}`
+                      );
+                    }
+                  } catch (e: any) {
+                    console.error("generate lang error", lang, e);
+                    Message.showMessage(`生成 ${lang}.json 异常`);
+                  }
                 }
-              } catch (e: any) {
-                console.error("generate lang error", lang, e);
-                Message.showMessage(`生成 ${lang}.json 异常`);
-              } finally {
-                statusBar.text = `$(sync~spin) 生成缺失语言 ${i + 1}/${
-                  missing.length
-                }`;
               }
+            } finally {
+              statusBar.hide();
+              statusBar.dispose();
             }
-            statusBar.hide();
-            statusBar.dispose();
+
             Message.showMessage(
               `生成完成：成功 ${created}/${missing.length}`,
               created === missing.length
