@@ -1010,13 +1010,17 @@ export class Utils {
             let idx = r.start - 1;
             while (idx >= 0 && /[ \t\r\n]/.test(scriptContent[idx])) idx--;
             if (idx >= 0 && scriptContent[idx] === "=") {
-              // wrap with braces and preserve original surrounding whitespace
-              // replace without using the /s flag for compatibility
-              r.text = txt.replace(
-                /^(\s*)([\s\S]*?)(\s*)$/,
-                (m: string, pre: string, inner: string, post: string) =>
-                  `${pre}{${inner}}${post}`
-              );
+              // Avoid wrapping when '=' is part of '==' or '===' (e.g. in comparisons)
+              const prevChar = idx - 1 >= 0 ? scriptContent[idx - 1] : null;
+              if (prevChar !== "=") {
+                // wrap with braces and preserve original surrounding whitespace
+                // replace without using the /s flag for compatibility
+                r.text = txt.replace(
+                  /^(\s*)([\s\S]*?)(\s*)$/,
+                  (m: string, pre: string, inner: string, post: string) =>
+                    `${pre}{${inner}}${post}`
+                );
+              }
             }
           }
         } catch (e) {
