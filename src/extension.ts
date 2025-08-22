@@ -190,17 +190,7 @@ export async function activate(context: vscode.ExtensionContext) {
                       tempFileName,
                       isNeedRandSuffix,
                       async () => {
-                        if (config.isOnline()) {
-                          config.handleSendToOnline(
-                            newLangObj,
-                            pageEnName,
-                            async () => {
-                              handleRefresh();
-                            }
-                          );
-                        } else {
-                          handleRefresh();
-                        }
+                        handleRefresh();
                       }
                     );
                   }
@@ -433,7 +423,6 @@ export async function activate(context: vscode.ExtensionContext) {
                   Message.showMessage(login?.msg || "登录失败");
                   return;
                 }
-                // 调用百度翻译
                 const { transSourceObj, message } =
                   await Utils.getTransSourceObjByLlm(
                     localLangObj,
@@ -656,7 +645,6 @@ export async function activate(context: vscode.ExtensionContext) {
             config.openSetting(fileName, (isInit) => {
               if (isInit) {
                 config.init(context, () => {});
-                console.log("deyi2", config);
                 // // 记录用户行为数据
                 // logging disabled
               }
@@ -684,9 +672,6 @@ export async function activate(context: vscode.ExtensionContext) {
             });
             if (selected && selected.value !== VSCodeUI.userKey) {
               VSCodeUI.userKey = selected.value;
-              if (config.isOnline()) {
-                await config.getOnlineLanguage(VSCodeUI.userKey);
-              }
               // 重新渲染
               VSCodeUI.renderDecoration(config);
             }
@@ -755,12 +740,6 @@ export async function activate(context: vscode.ExtensionContext) {
         }
       )
     );
-
-    // discard: 用处不大，先去掉耗性能
-    // // 监听命令-处理点击转跳到变量声明处
-    // context.subscriptions.push(vscode.languages.registerDefinitionProvider(languageIds, {
-    // 	provideDefinition
-    // }));
 
     // 监听命令-刷新
     context.subscriptions.push(
