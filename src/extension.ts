@@ -1,5 +1,4 @@
 import * as vscode from "vscode";
-// import TelemetryReporter from "vscode-extension-telemetry";
 import { Utils } from "./utils";
 import { VSCodeUI } from "./utils/vscode-ui";
 import { FileIO } from "./utils/fileIO";
@@ -18,6 +17,13 @@ interface LangType {
   type?: string;
 }
 
+// Centralized constants (avoid magic numbers scattered in code)
+const SAVE_IGNORE_MS = 500; // ignore fs events within 500ms of an editor save
+const DEFAULT_WATCH_GLOB = "**/*.{ts,tsx,js,jsx,vue,html,json}";
+const FS_DEBOUNCE_MS = 300; // debounce delay for filesystem events
+const DEFAULT_CONCURRENCY_SCAN = 4;
+const DEFAULT_CONCURRENCY_TRANSLATE = 3;
+
 let langObj: LangType = null;
 
 export async function activate(context: vscode.ExtensionContext) {
@@ -26,19 +32,11 @@ export async function activate(context: vscode.ExtensionContext) {
     // Track recent saves initiated from the editor to avoid duplicate
     // refreshes when file system watcher emits the same change.
     const recentEditorSaves: Map<string, number> = new Map();
-    const SAVE_IGNORE_MS = 500; // ignore fs events within 500ms of an editor save
     // 初始化
     config.init(context, () => {
       // 渲染语言
       VSCodeUI.renderDecoration(config);
       console.log("config init complete");
-      // try {
-      // 	// 记录用户行为数据，只会读取package.json文件信息中的（项目名称、版本、项目描述），其余内容不会读取
-      // 	reporter.sendTelemetryEvent("du_i18n_deyi_init", {
-      // 		action: "初始化",
-      // 		projectInfo,
-      // 	});
-      // } catch(e) {}
     });
 
     // 监听文件保存
@@ -99,11 +97,10 @@ export async function activate(context: vscode.ExtensionContext) {
     // Debounce and filter by configured file pattern to avoid excessive refreshes.
     try {
       // Prefer an explicit watcher glob if provided by config, otherwise use a narrower default
-      const defaultWatchGlob = "**/*.{ts,tsx,js,jsx,vue,html,json}";
       const watchGlob =
         typeof (config as any).getWatcherGlob === "function"
-          ? (config as any).getWatcherGlob() || defaultWatchGlob
-          : defaultWatchGlob;
+          ? (config as any).getWatcherGlob() || DEFAULT_WATCH_GLOB
+          : DEFAULT_WATCH_GLOB;
       const fileWatcher = vscode.workspace.createFileSystemWatcher(watchGlob);
       context.subscriptions.push(fileWatcher);
       const filesChanged = new Set<string>();
@@ -136,7 +133,7 @@ export async function activate(context: vscode.ExtensionContext) {
             await config.refreshGlobalLangObj();
             VSCodeUI.renderDecoration(config);
             fsDebounceTimer = null;
-          }, 300);
+          }, FS_DEBOUNCE_MS);
         } catch (e) {
           console.error("fileWatcher schedule error", e);
         }
@@ -156,11 +153,7 @@ export async function activate(context: vscode.ExtensionContext) {
         async function () {
           // console.log("vscode 扫描中文")
           try {
-            // // 记录用户行为数据
-            // reporter.sendTelemetryEvent("extension_du_i18n_scanAndGenerate", {
-            // 	action: "扫描中文",
-            // 	projectInfo,
-            // });
+            // logging disabled
 
             const activeEditor = vscode.window.activeTextEditor;
             if (activeEditor) {
@@ -357,7 +350,7 @@ export async function activate(context: vscode.ExtensionContext) {
                         }
                       );
 
-                      const concurrency = 4; // reasonable default
+                      const concurrency = DEFAULT_CONCURRENCY_SCAN; // reasonable default
                       try {
                         await Utils.limitedParallelRequests(
                           requestList,
@@ -384,11 +377,7 @@ export async function activate(context: vscode.ExtensionContext) {
         "extension.du.i18n.translateFromChineseKey",
         async function () {
           try {
-            // // 记录用户行为数据
-            // reporter.sendTelemetryEvent("extension_du_i18n_multiScanAndGenerate", {
-            // 	action: "在线翻译",
-            // 	projectInfo,
-            // });
+            // logging disabled
 
             // console.log("vscode 中文转译")
             const langKey = VSCodeUI.userKey || config.getDefaultLang();
@@ -409,10 +398,7 @@ export async function activate(context: vscode.ExtensionContext) {
               if (!config.isOnline()) {
                 await config.refreshGlobalLangObj();
               }
-              // // 记录用户行为数据
-              // reporter.sendTelemetryEvent("extension_du_i18n_multiScanAndGenerate", {
-              // 	action: "在线翻译-成功",
-              // });
+              // logging disabled
             };
             const activeEditor = vscode.window.activeTextEditor;
             if (activeEditor) {
@@ -432,8 +418,7 @@ export async function activate(context: vscode.ExtensionContext) {
                 if (!data) {
                   return;
                 }
-                const localLangObj =
-                  require("./utils").Utils.parseJsonSafe(data);
+                const localLangObj = Utils.parseJsonSafe(data);
                 if (!localLangObj) {
                   Message.showMessage(
                     "解析本地 JSON 失败，请检查文件格式",
@@ -473,12 +458,7 @@ export async function activate(context: vscode.ExtensionContext) {
             }
           } catch (e) {
             console.error(e);
-            // // 记录用户行为数据
-            // reporter.sendTelemetryEvent("extension_du_i18n_multiScanAndGenerate", {
-            // 	action: "在线翻译-异常",
-            // 	projectInfo,
-            // 	error: e,
-            // });
+            // logging disabled
           }
         }
       )
@@ -520,10 +500,7 @@ export async function activate(context: vscode.ExtensionContext) {
               } else {
                 handleTranslate(transSourceObj);
               }
-              // // 记录用户行为数据
-              // reporter.sendTelemetryEvent("extension_du_i18n_multiScanAndGenerate", {
-              // 	action: "在线翻译-内部",
-              // });
+              // logging disabled
             } else {
               // 返回没有翻译的文件集合
               const resultObj: any = await config.handleMissingDetection(
@@ -580,7 +557,7 @@ export async function activate(context: vscode.ExtensionContext) {
               sharedStatusBar.text = `$(sync~spin) 批量翻译 0/${totalBatches}`;
               sharedStatusBar.show();
               let maxDone = 0; // 确保进度单调递增
-              const concurrency = 3; // 可调并发
+              const concurrency = DEFAULT_CONCURRENCY_TRANSLATE; // 可调并发
               // 计算每个文件的全局批次 offset
               let accOffset = 0;
               const requestList = filtered.map(
@@ -681,18 +658,12 @@ export async function activate(context: vscode.ExtensionContext) {
                 config.init(context, () => {});
                 console.log("deyi2", config);
                 // // 记录用户行为数据
-                // reporter.sendTelemetryEvent("du_i18n_deyi_init", {
-                // 	action: "初始化-设置回调",
-                // 	projectInfo,
-                // });
+                // logging disabled
               }
             });
           }
 
-          // // 记录用户行为数据
-          // reporter.sendTelemetryEvent("extension_du_i18n_setting", {
-          // 	action: "设置",
-          // });
+          // logging disabled
         }
       )
     );
@@ -720,10 +691,7 @@ export async function activate(context: vscode.ExtensionContext) {
               VSCodeUI.renderDecoration(config);
             }
           }
-          // // 记录用户行为数据
-          // reporter.sendTelemetryEvent("extension_du_i18n_change", {
-          // 	action: "切换语言",
-          // });
+          // logging disabled
         }
       )
     );
@@ -773,10 +741,7 @@ export async function activate(context: vscode.ExtensionContext) {
                 });
             }
           }
-          // // 记录用户行为数据
-          // reporter.sendTelemetryEvent("extension_du_i18n_receive", {
-          // 	action: "自定义命令",
-          // });
+          // logging disabled
         }
       )
     );
@@ -807,10 +772,7 @@ export async function activate(context: vscode.ExtensionContext) {
           VSCodeUI.renderDecoration(config);
           vscode.window.showInformationMessage(`翻译数据刷新成功`);
 
-          // // 记录用户行为数据
-          // reporter.sendTelemetryEvent("extension_du_i18n_updateLocalLangPackage", {
-          // 	action: "刷新数据",
-          // });
+          // logging disabled
         }
       )
     );
@@ -875,10 +837,7 @@ export async function activate(context: vscode.ExtensionContext) {
             panel.webview.html = `暂无数据`;
           }
 
-          // // 记录用户行为数据
-          // reporter.sendTelemetryEvent("extension_du_i18n_analytics", {
-          // 	action: "文件统计",
-          // });
+          // logging disabled
         }
       )
     );
@@ -895,15 +854,9 @@ export async function activate(context: vscode.ExtensionContext) {
               config.handleSyncTempFileToOnline(fileName, () => {
                 config.getOnlineLanguage();
                 vscode.window.showInformationMessage(`当前文件上传成功`);
-                // // 记录用户行为数据
-                // reporter.sendTelemetryEvent("extension_du_i18n_updateLocalToOnline", {
-                // 	action: "上传文案-内部-成功上传",
-                // });
+                // logging disabled
               });
-              // // 记录用户行为数据
-              // reporter.sendTelemetryEvent("extension_du_i18n_updateLocalToOnline", {
-              // 	action: "上传文案-内部",
-              // });
+              // logging disabled
             } else {
               vscode.window.showWarningMessage(`请完善线上化相关配置`);
               const activeEditor = vscode.window.activeTextEditor;
@@ -911,10 +864,7 @@ export async function activate(context: vscode.ExtensionContext) {
                 const { fileName } = activeEditor.document || {};
                 config.openSetting(fileName, () => {});
               }
-              // // 记录用户行为数据
-              // reporter.sendTelemetryEvent("extension_du_i18n_updateLocalToOnline", {
-              // 	action: "上传文案-外部",
-              // });
+              // logging disabled
             }
           }
         }
@@ -930,15 +880,9 @@ export async function activate(context: vscode.ExtensionContext) {
             config.handleSyncAllTempFileToOnline(() => {
               config.getOnlineLanguage();
               vscode.window.showInformationMessage(`同步成功`);
-              // // 记录用户行为数据
-              // reporter.sendTelemetryEvent("extension_du_i18n_batchUpdateOnline", {
-              // 	action: "批量上传文案-内部成功上传",
-              // });
+              // logging disabled
             });
-            // // 记录用户行为数据
-            // reporter.sendTelemetryEvent("extension_du_i18n_batchUpdateOnline", {
-            // 	action: "批量上传文案-内部",
-            // });
+            // logging disabled
           } else {
             vscode.window.showWarningMessage(`请完善线上化相关配置`);
             const activeEditor = vscode.window.activeTextEditor;
@@ -946,10 +890,7 @@ export async function activate(context: vscode.ExtensionContext) {
               const { fileName } = activeEditor.document || {};
               config.openSetting(fileName, () => {});
             }
-            // // 记录用户行为数据
-            // reporter.sendTelemetryEvent("extension_du_i18n_batchUpdateOnline", {
-            // 	action: "批量上传文案-外部",
-            // });
+            // logging disabled
           }
           // const selectFolder = await vscode.window.showOpenDialog({ canSelectFiles: false, canSelectFolders: true, canSelectMany: false, });
           // // console.log("selectFolder", selectFolder);
@@ -969,10 +910,7 @@ export async function activate(context: vscode.ExtensionContext) {
           if (activeEditor) {
             const { fileName } = activeEditor.document || {};
             if (config.isOnline()) {
-              // // 记录用户行为数据
-              // reporter.sendTelemetryEvent("extension_du_i18n_updateLocalFromOnline", {
-              // 	action: "拉取远程文案-内部",
-              // });
+              // logging disabled
 
               if (!config.checkProjectConfig()) {
                 return null;
@@ -990,19 +928,13 @@ export async function activate(context: vscode.ExtensionContext) {
                 vscode.workspace.openTextDocument(filePath).then((doc) => {
                   vscode.window.showTextDocument(doc);
 
-                  // // 记录用户行为数据
-                  // reporter.sendTelemetryEvent("extension_du_i18n_updateLocalFromOnline", {
-                  // 	action: "拉取远程文案-内部-成功拉取",
-                  // });
+                  // logging disabled
                 });
               }
             } else {
               vscode.window.showWarningMessage(`请完善线上化相关配置`);
               config.openSetting(fileName, () => {});
-              // // 记录用户行为数据
-              // reporter.sendTelemetryEvent("extension_du_i18n_updateLocalFromOnline", {
-              // 	action: "拉取远程文案-外部",
-              // });
+              // logging disabled
             }
           }
         }
@@ -1042,17 +974,11 @@ export async function activate(context: vscode.ExtensionContext) {
               vscode.workspace.openTextDocument(filePath).then((doc) => {
                 vscode.window.showTextDocument(doc);
 
-                // // 记录用户行为数据
-                // reporter.sendTelemetryEvent("extension_du_i18n_missingDetection", {
-                // 	action: "翻译漏检-成功",
-                // });
+                // logging disabled
               });
             }
           }
-          // // 记录用户行为数据
-          // reporter.sendTelemetryEvent("extension_du_i18n_missingDetection", {
-          // 	action: "翻译漏检",
-          // });
+          // logging disabled
         }
       )
     );
@@ -1103,25 +1029,16 @@ export async function activate(context: vscode.ExtensionContext) {
                         .then((doc) => {
                           vscode.window.showTextDocument(doc);
 
-                          // // 记录用户行为数据
-                          // reporter.sendTelemetryEvent("extension_du_i18n_searchUntranslateText", {
-                          // 	action: "远程漏检文案-内部-操作成功",
-                          // });
+                          // logging disabled
                         });
                     }
                   }
                 }
-                // // 记录用户行为数据
-                // reporter.sendTelemetryEvent("extension_du_i18n_searchUntranslateText", {
-                // 	action: "远程漏检文案-内部",
-                // });
+                // logging disabled
               } else {
                 vscode.window.showWarningMessage(`请完善线上化相关配置`);
                 config.openSetting(fileName, () => {});
-                // // 记录用户行为数据
-                // reporter.sendTelemetryEvent("extension_du_i18n_searchUntranslateText", {
-                // 	action: "远程漏检文案-外部",
-                // });
+                // logging disabled
               }
             }
           } catch (e) {
@@ -1129,16 +1046,9 @@ export async function activate(context: vscode.ExtensionContext) {
             if (e.message) {
               vscode.window.showWarningMessage(e.message);
             }
-            // // 记录用户行为数据
-            // reporter.sendTelemetryEvent("extension_du_i18n_searchUntranslateText", {
-            // 	action: "远程漏检文案-异常",
-            // 	error: e,
-            // });
+            // logging disabled
           }
-          // // 记录用户行为数据
-          // reporter.sendTelemetryEvent("extension_du_i18n_searchUntranslateText", {
-          // 	action: "远程漏检文案",
-          // });
+          // logging disabled
         }
       )
     );
@@ -1198,10 +1108,7 @@ export async function activate(context: vscode.ExtensionContext) {
               () => {
                 Message.showMessage(`拆分成功`, MessageType.INFO);
 
-                // // 记录用户行为数据
-                // reporter.sendTelemetryEvent("extension_du_i18n_generateLangFile", {
-                // 	action: "拆分语言文件-拆分成功",
-                // });
+                // logging disabled
               }
             );
           }
@@ -1350,7 +1257,7 @@ export async function activate(context: vscode.ExtensionContext) {
     // 在插件卸载时或使用完成后，断开与服务器的连接
     context.subscriptions.push({
       dispose() {
-        // reporter.dispose();
+        // nothing to dispose
       },
     });
   } catch (e) {
