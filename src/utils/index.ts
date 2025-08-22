@@ -989,11 +989,47 @@ export class Utils {
       },
     });
 
-    // Apply replacements using MagicString to preserve untouched whitespace
+    // Post-process replacements: if a replacement is a bare expression (e.g. a function call)
+    // and it sits right after an '=' (likely a JSX attribute), ensure it's wrapped in {}
+    // to avoid producing invalid JSX like `prop=getXxx()` instead of `prop={getXxx()}`.
     if (replacements.length) {
+      const newRepls = replacements.map((r) => {
+        try {
+          const txt = String(r.text || "");
+          const trimmed = txt.trim();
+          // heuristic: bare expression looks like identifier or member/call starting with letter/$_
+          const looksLikeExpr =
+            /^[A-Za-z_$][A-Za-z0-9_$.]*\(.*\)$/.test(trimmed) ||
+            /^[A-Za-z_$][A-Za-z0-9_$.]*$/.test(trimmed);
+          if (
+            looksLikeExpr &&
+            !trimmed.startsWith("{") &&
+            !trimmed.endsWith("}")
+          ) {
+            // find previous non-whitespace char before the replacement start
+            let idx = r.start - 1;
+            while (idx >= 0 && /[ \t\r\n]/.test(scriptContent[idx])) idx--;
+            if (idx >= 0 && scriptContent[idx] === "=") {
+              // wrap with braces and preserve original surrounding whitespace
+              // replace without using the /s flag for compatibility
+              r.text = txt.replace(
+                /^(\s*)([\s\S]*?)(\s*)$/,
+                (m: string, pre: string, inner: string, post: string) =>
+                  `${pre}{${inner}}${post}`
+              );
+            }
+          }
+        } catch (e) {
+          // ignore during heuristic
+        }
+        return r;
+      });
+
       const ms = new MagicString(scriptContent);
+      // use newRepls for application
+      const toApply = newRepls;
       // apply in reverse order to keep indexes valid
-      replacements
+      toApply
         .sort((a, b) => b.start - a.start)
         .forEach((r) => ms.overwrite(r.start, r.end, r.text));
       const finalCode = ms.toString();
