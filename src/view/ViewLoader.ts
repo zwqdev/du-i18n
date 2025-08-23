@@ -14,12 +14,15 @@ export class ViewLoader {
     this.disposables = [];
 
     this.panel = vscode.window.createWebviewPanel(
-      'reactApp', 
-      '批量新增翻译', 
-      vscode.ViewColumn.One, {
+      'reactApp',
+      '批量新增翻译',
+      vscode.ViewColumn.One,
+      {
         enableScripts: true,
         retainContextWhenHidden: true,
-        localResourceRoots: [vscode.Uri.file(path.join(this.context.extensionPath, 'dist'))],
+        localResourceRoots: [
+          vscode.Uri.file(path.join(this.context.extensionPath, 'dist')),
+        ],
       }
     );
 
@@ -28,7 +31,7 @@ export class ViewLoader {
     this.panel.webview.onDidReceiveMessage(
       (message: any) => {
         // 自定义命令，传递给上一层
-        vscode.commands.executeCommand('extension.du.i18n.receive', message);
+        vscode.commands.executeCommand('extension.yz.i18n.receive', message);
       },
       null,
       this.disposables

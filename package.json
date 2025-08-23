@@ -36,43 +36,43 @@
   "contributes": {
     "commands": [
       {
-        "command": "extension.du.i18n.change",
+        "command": "extension.yz.i18n.change",
         "title": "语言切换"
       },
       {
-        "command": "extension.du.i18n.setting",
+        "command": "extension.yz.i18n.setting",
         "title": "设置"
       },
       {
-        "command": "extension.du.i18n.scanAndGenerate",
+        "command": "extension.yz.i18n.scanAndGenerate",
         "title": "扫描中文"
       },
       {
-        "command": "extension.du.i18n.multiScanAndGenerate",
+        "command": "extension.yz.i18n.multiScanAndGenerate",
         "title": "批量扫描中文"
       },
       {
-        "command": "extension.du.i18n.translateFromChineseKey",
+        "command": "extension.yz.i18n.translateFromChineseKey",
         "title": "在线翻译"
       },
       {
-        "command": "extension.du.i18n.multiTranslateFromChineseKey",
+        "command": "extension.yz.i18n.multiTranslateFromChineseKey",
         "title": "批量在线翻译"
       },
       {
-        "command": "extension.du.i18n.updateLocalLangPackage",
+        "command": "extension.yz.i18n.updateLocalLangPackage",
         "title": "刷新数据"
       },
       {
-        "command": "extension.du.i18n.mergeLangFile",
+        "command": "extension.yz.i18n.mergeLangFile",
         "title": "合并语言文件"
       },
       {
-        "command": "extension.du.i18n.receive",
+        "command": "extension.yz.i18n.receive",
         "title": "自定义命令"
       },
       {
-        "command": "extension.du.i18n.generateMissingLangFiles",
+        "command": "extension.yz.i18n.generateMissingLangFiles",
         "title": "生成缺失语言文件"
       }
     ],
@@ -86,39 +86,39 @@
       ],
       "submenu/command": [
         {
-          "command": "extension.du.i18n.change",
+          "command": "extension.yz.i18n.change",
           "group": "7_modification@3"
         },
         {
-          "command": "extension.du.i18n.scanAndGenerate",
+          "command": "extension.yz.i18n.scanAndGenerate",
           "group": "2_workspace@1"
         },
         {
-          "command": "extension.du.i18n.multiScanAndGenerate",
+          "command": "extension.yz.i18n.multiScanAndGenerate",
           "group": "3_compare@2"
         },
         {
-          "command": "extension.du.i18n.translateFromChineseKey",
+          "command": "extension.yz.i18n.translateFromChineseKey",
           "group": "2_workspace@2"
         },
         {
-          "command": "extension.du.i18n.multiTranslateFromChineseKey",
+          "command": "extension.yz.i18n.multiTranslateFromChineseKey",
           "group": "3_compare@5"
         },
         {
-          "command": "extension.du.i18n.mergeLangFile",
+          "command": "extension.yz.i18n.mergeLangFile",
           "group": "5_cutcopypaste@21"
         },
         {
-          "command": "extension.du.i18n.generateMissingLangFiles",
+          "command": "extension.yz.i18n.generateMissingLangFiles",
           "group": "5_cutcopypaste@27"
         },
         {
-          "command": "extension.du.i18n.updateLocalLangPackage",
+          "command": "extension.yz.i18n.updateLocalLangPackage",
           "group": "7_modification@8"
         },
         {
-          "command": "extension.du.i18n.setting",
+          "command": "extension.yz.i18n.setting",
           "group": "z_commands@20"
         }
       ]
@@ -126,25 +126,25 @@
     "submenus": [
       {
         "id": "submenu/command",
-        "label": "国际化（i18n）"
+        "label": "FPF国际化"
       }
     ],
     "telemetry": {
       "key": "G-ZXEWB1PNPW",
-      "event1": "extension_du_i18n_change",
-      "event2": "extension_du_i18n_setting",
-      "event3": "extension_du_i18n_scanAndGenerate",
-      "event4": "extension_du_i18n_multiScanAndGenerate",
-      "event5": "extension_du_i18n_translateFromChineseKey",
-      "event6": "extension_du_i18n_updateLocalToOnline",
-      "event7": "extension_du_i18n_missingDetection",
-      "event8": "extension_du_i18n_updateLocalFromOnline",
-      "event9": "extension_du_i18n_searchUntranslateText",
-      "event10": "extension_du_i18n_updateLocalLangPackage",
-      "event11": "extension_du_i18n_generateLangFile",
-      "event12": "extension_du_i18n_analytics",
-      "event13": "extension_du_i18n_receive",
-      "event14": "extension_du_i18n_batchUpdateOnline",
+      "event1": "extension_yz_i18n_change",
+      "event2": "extension_yz_i18n_setting",
+      "event3": "extension_yz_i18n_scanAndGenerate",
+      "event4": "extension_yz_i18n_multiScanAndGenerate",
+      "event5": "extension_yz_i18n_translateFromChineseKey",
+      "event6": "extension_yz_i18n_updateLocalToOnline",
+      "event7": "extension_yz_i18n_missingDetection",
+      "event8": "extension_yz_i18n_updateLocalFromOnline",
+      "event9": "extension_yz_i18n_searchUntranslateText",
+      "event10": "extension_yz_i18n_updateLocalLangPackage",
+      "event11": "extension_yz_i18n_generateLangFile",
+      "event12": "extension_yz_i18n_analytics",
+      "event13": "extension_yz_i18n_receive",
+      "event14": "extension_yz_i18n_batchUpdateOnline",
       "event21": "du_i18n_deyi_init"
     }
   },
