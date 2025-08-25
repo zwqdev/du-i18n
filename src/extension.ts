@@ -1743,6 +1743,7 @@ export async function activate(context: vscode.ExtensionContext) {
             } finally {
               statusBar.hide();
               statusBar.dispose();
+              VSCodeUI.renderDecoration(config);
             }
           } catch (error) {
             console.error("mergeCommonKeys error", error);

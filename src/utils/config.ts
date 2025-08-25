@@ -103,12 +103,10 @@ export class Config {
   }
   async readConfig() {
     // 优先直接读取工作区 .vscode/yz-i18n.config.json（绝对路径）
-    let configAbsPath = this.configFilePath;
-    if (!path.isAbsolute(configAbsPath)) {
-      const folders = vscode.workspace.workspaceFolders;
-      if (folders && folders.length) {
-        configAbsPath = path.join(folders[0].uri.fsPath, configAbsPath);
-      }
+    let configAbsPath = this.configFilePath.slice(1);
+    const folders = vscode.workspace.workspaceFolders;
+    if (folders && folders.length) {
+      configAbsPath = path.join(folders[0].uri.fsPath, configAbsPath);
     }
 
     const applyConfig = (config: any) => {
