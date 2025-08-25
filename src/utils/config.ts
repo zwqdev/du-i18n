@@ -230,24 +230,6 @@ export class Config {
     } catch (e) {
       console.error("read .vscode config error", e);
     }
-
-    // 兼容旧路径：在工作区内查找 yz-i18n.config.json（排除 .vscode 目录）
-    const files = await FileIO.getFiles("**/yz-i18n.config.json");
-    files.forEach(({ fsPath }) => {
-      const fileName = path.basename(fsPath);
-      if (/\.(json)$/.test(fileName)) {
-        try {
-          const data = fs.readFileSync(fsPath, "utf-8");
-          if (data) {
-            const parsed = Utils.parseJsonSafe(data);
-            if (parsed) applyConfig(parsed);
-            else console.error("Invalid JSON in config file:", fsPath);
-          }
-        } catch (e) {
-          console.error(e);
-        }
-      }
-    });
   }
 
   getTransBatchSize() {
@@ -315,8 +297,6 @@ export class Config {
       tempLangs: this.tempLangs,
       // 语言文件路径
       langPaths: this.langPaths,
-      // 翻译源文件路径(无本地翻译库的忽略)
-      transSourcePaths: this.transSourcePaths,
       // 新增翻译文案路径
       tempPaths: this.tempPaths,
       // 指定生成json文件名
@@ -325,12 +305,6 @@ export class Config {
       multiFolders: this.multiFolders,
       // key前缀，默认为null，前两层文件名如'base.index.'
       prefixKey: this.prefixKey,
-      // key连接符，默认null为'.'
-      keyJoinStr: this.keyJoinStr,
-      // 跳过翻译漏检机制的key，打标已翻译
-      uncheckMissKeys: this.uncheckMissKeys,
-      // key的引用是单引号还是双引号，默认是单引号
-      isSingleQuote: this.isSingleQuote,
       // 是否开启hook的i18n引入
       hookImport: this.hookImport,
       gjUserName: this.gjUserName,
@@ -339,6 +313,7 @@ export class Config {
       scanIgnoreGlobs: this.scanIgnoreGlobs,
       // 跳过提取的函数调用名
       skipExtractCallees: this.skipExtractCallees,
+      reuseExistingKey: this.reuseExistingKey,
     };
     return initConfig;
   }
