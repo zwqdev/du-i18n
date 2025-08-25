@@ -49,6 +49,7 @@ export class Config {
   private scanIgnoreGlobs: string[]; // 批量扫描忽略的glob模式
   private scanIgnoreRegexes: RegExp[]; // 预编译忽略规则
   private skipExtractCallees: string[]; // 跳过提取的函数调用名（例如 ['track','logger.track']）
+  private minMergeCount: number; // 合并重复key的最小重复次数
 
   constructor(props: any = {}) {
     // 默认将配置文件放在工作区的 .vscode 目录
@@ -96,6 +97,7 @@ export class Config {
     this.scanIgnoreGlobs = ["*.js", "*.ts"]; // 默认无忽略
     this.scanIgnoreRegexes = [];
     this.skipExtractCallees = ["track", "trackClick"]; // 默认跳过 track 调用内部的字符串提取，可自行在配置中覆盖
+    this.minMergeCount = 3; // 默认最小重复次数为3
   }
   async readConfig() {
     // 优先直接读取工作区 .vscode/yz-i18n.config.json（绝对路径）
@@ -138,6 +140,7 @@ export class Config {
         transBatchSize,
         scanIgnoreGlobs,
         skipExtractCallees,
+        minMergeCount,
         gjUserName = "yz_admin",
         gjPassword = "yz123456",
       } = config || {};
@@ -197,6 +200,9 @@ export class Config {
           (c) => typeof c === "string" && c.trim().length
         );
       }
+      if (typeof minMergeCount === "number" && minMergeCount > 0) {
+        this.minMergeCount = minMergeCount;
+      }
       // this.fileReg = fileReg || this.fileReg;
       this.gjUserName = gjUserName;
       this.gjPassword = gjPassword;
@@ -244,6 +250,10 @@ export class Config {
 
   getScanIgnoreGlobs() {
     return this.scanIgnoreGlobs;
+  }
+
+  getMinMergeCount() {
+    return this.minMergeCount;
   }
 
   // Use micromatch to convert glob patterns to regular expressions reliably

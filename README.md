@@ -43,6 +43,7 @@ v14.17.3
   "hookImport": "", //自动注入import
   "skipExtractCallees": [],
   "scanIgnoreGlobs": ["**/node_modules/**", "**/dist/**"],
+  "minMergeCount": 2,
   "watcherGlob": "**/*.{ts,tsx,js,jsx,vue,html,json}"
 }
 ```
@@ -62,12 +63,56 @@ v14.17.3
 - hookImport: 扫描时是否尝试自动插入或检查 i18n hook/import。
 - skipExtractCallees: 是否跳过某些复杂函数调用的提取（用于减少误判并提升速度）。
 - scanIgnoreGlobs: 不参与扫描/翻译的路径或文件的 glob 列表。
+- minMergeCount: 合并重复 key 的最小重复次数，默认为 2（即至少 2 个相同值才合并）。
 - watcherGlob: 覆盖默认的文件系统 watcher 匹配规则（用于减少无关文件触发）。
 
 关于在线翻译凭据
 
 - 对接内部大模型
   具体凭据/账号字段通常通过 `config.getAccount()` 等方式读取，请在 `yz-i18n.config.json` 或环境变量中存放相应的 token/账号信息（不要硬编码敏感信息到仓库）。
+
+## 功能说明
+
+### 合并重复值的 key
+
+此功能能够自动检测并合并默认语言文件中值相同的多个 key，有助于减少翻译工作量和维护成本。
+
+**使用方法：**
+
+1. 在编辑器中右键，选择 "FPF 国际化" -> "合并重复值的 key"
+2. 系统会自动分析默认语言文件（如 zh.json）中值相同的 key
+3. 将重复的 key 合并为 `common_${hash值}` 格式的新 key
+4. 自动替换源代码中的所有引用
+5. 更新所有语言文件
+
+**示例：**
+
+```json
+// 合并前的 zh.json
+{
+  "FrontPage_index_0121": "保存",
+  "sowbusiness.putseedling.save": "保存",
+  "user.profile.save": "保存"
+}
+
+// 合并后的 zh.json
+{
+  "common_abc12345": "保存"
+}
+```
+
+**配置说明：**
+
+- 只处理 `.js`, `.ts`, `.vue`, `.jsx`, `.tsx` 文件
+- 遵循 `scanIgnoreGlobs` 配置忽略指定文件
+- 通过 `minMergeCount` 配置最小重复次数（默认为 3），只有达到该次数的重复值才会被合并
+- 如果生成的新 key 已存在，会自动添加时间戳后缀
+
+**预览功能：**
+
+- 使用 "预览合并重复值的 key" 命令可以在实际执行前查看将要进行的更改
+- 预览界面显示统计信息、合并方案和影响的文件
+- 确认无误后可直接在预览界面执行合并操作
 
 注意与合规
 

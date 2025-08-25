@@ -2,7 +2,7 @@ import * as vscode from "vscode";
 import MapCache from "./cache";
 import { YZ } from "./yzApi";
 import { FileIO } from "./fileIO";
-import { Message } from "./message";
+import { Message, MessageType } from "./message";
 import { loginByAccount } from "./api";
 const path = require("path");
 const fs = require("fs");
@@ -2862,5 +2862,670 @@ export class Utils {
     const { username, password } = account;
     // 这里是获取cookie的逻辑
     return loginByAccount(username, password);
+  }
+
+  /**
+   * 预览合并重复值的key操作，返回预览信息而不执行实际合并
+   * @param config Config实例
+   * @param defaultLangFilePath 默认语言文件路径
+   * @param langFilePaths 所有语言文件路径数组
+   * @param srcPath 源代码目录路径
+   * @param minDuplicateCount 最小重复次数，默认为2（即至少2个相同值才合并）
+   * @param onProgress 进度回调函数
+   */
+  static async previewMergeCommonKeys(
+    config: any,
+    defaultLangFilePath: string,
+    langFilePaths: string[],
+    srcPath: string = "src",
+    minDuplicateCount: number = 2,
+    onProgress?: (
+      phase: string,
+      current: number,
+      total: number,
+      detail?: string
+    ) => void
+  ) {
+    try {
+      // 1. 读取默认语言文件
+      onProgress?.("读取语言文件", 1, 5);
+      const defaultLangContent = fs.readFileSync(defaultLangFilePath, "utf-8");
+      const defaultLangObj = Utils.parseJsonSafe(defaultLangContent);
+
+      if (!defaultLangObj) {
+        throw new Error(`无法解析默认语言文件: ${defaultLangFilePath}`);
+      }
+
+      // 2. 按值分组，找出重复的值
+      onProgress?.("分析重复值", 2, 5);
+      const valueGroups: Map<string, string[]> = new Map();
+
+      Object.entries(defaultLangObj).forEach(([key, value]) => {
+        const valueStr = String(value);
+        if (!valueGroups.has(valueStr)) {
+          valueGroups.set(valueStr, []);
+        }
+        valueGroups.get(valueStr)!.push(key);
+      });
+
+      // 3. 过滤出有重复值的组（根据最小重复次数）
+      onProgress?.("过滤重复组", 3, 5);
+      const duplicateGroups = Array.from(valueGroups.entries()).filter(
+        ([_, keys]) => keys.length >= minDuplicateCount
+      );
+
+      if (duplicateGroups.length === 0) {
+        return {
+          success: false,
+          message: `没有找到需要合并的重复值（最小重复次数: ${minDuplicateCount}）`,
+          duplicateGroups: [],
+          affectedFiles: [],
+          mergePreview: [],
+          minDuplicateCount,
+        };
+      }
+
+      // 4. 生成合并映射表和预览信息
+      onProgress?.("生成合并映射", 4, 5);
+      const mergeMap: Map<string, string> = new Map();
+      const mergedKeys: Map<string, string> = new Map();
+      const mergePreview: Array<{
+        newKey: string;
+        oldKeys: string[];
+        value: string;
+        occurrences: number;
+      }> = [];
+
+      duplicateGroups.forEach(([value, oldKeys]) => {
+        // 生成hash
+        const crypto = require("crypto");
+        const hash = crypto
+          .createHash("md5")
+          .update(value)
+          .digest("hex")
+          .substring(0, 8);
+        let newKey = `common_${hash}`;
+
+        // 检查新key是否已存在，如存在则加时间戳
+        if (defaultLangObj[newKey] || mergedKeys.has(newKey)) {
+          const timestamp = Date.now();
+          newKey = `common_${hash}_${timestamp}`;
+        }
+
+        // 记录映射关系
+        oldKeys.forEach((oldKey) => {
+          mergeMap.set(oldKey, newKey);
+        });
+        mergedKeys.set(newKey, value);
+
+        mergePreview.push({
+          newKey,
+          oldKeys: [...oldKeys],
+          value,
+          occurrences: oldKeys.length,
+        });
+      });
+
+      // 5. 预览将要影响的文件
+      onProgress?.("分析影响文件", 5, 5);
+      const affectedFiles = await Utils.previewAffectedFiles(
+        srcPath,
+        mergeMap,
+        config
+      );
+
+      // 6. 统计信息
+      const totalOldKeys = duplicateGroups.reduce(
+        (sum, [_, keys]) => sum + keys.length,
+        0
+      );
+      const savedKeys = totalOldKeys - duplicateGroups.length;
+
+      return {
+        success: true,
+        duplicateGroups: duplicateGroups.length,
+        totalOldKeys,
+        savedKeys,
+        mergePreview,
+        affectedFiles,
+        minDuplicateCount,
+        summary: {
+          totalMergedGroups: duplicateGroups.length,
+          totalSavedKeys: savedKeys,
+          totalAffectedFiles: affectedFiles.length,
+        },
+      };
+    } catch (error) {
+      return {
+        success: false,
+        message: `预览失败: ${error.message}`,
+        duplicateGroups: [],
+        affectedFiles: [],
+        mergePreview: [],
+        minDuplicateCount,
+      };
+    }
+  }
+
+  /**
+   * 预览将要影响的文件和具体的替换位置
+   */
+  private static async previewAffectedFiles(
+    srcPath: string,
+    mergeMap: Map<string, string>,
+    config: any
+  ) {
+    const fileExtensions = [".js", ".ts", ".vue", ".jsx", ".tsx"];
+    const affectedFiles: Array<{
+      filePath: string;
+      replacements: Array<{
+        oldKey: string;
+        newKey: string;
+        line: number;
+        column: number;
+        context: string;
+      }>;
+    }> = [];
+
+    try {
+      const workspaceFolder = vscode.workspace.workspaceFolders?.[0];
+      if (!workspaceFolder) {
+        return affectedFiles;
+      }
+
+      // 构建文件搜索pattern
+      let searchPattern: string;
+      if (
+        srcPath.startsWith("/") ||
+        (srcPath.length > 1 && srcPath[1] === ":")
+      ) {
+        const workspacePath = workspaceFolder.uri.fsPath;
+        if (srcPath.startsWith(workspacePath)) {
+          const relativePath = path
+            .relative(workspacePath, srcPath)
+            .replace(/\\/g, "/");
+          searchPattern = relativePath
+            ? `${relativePath}/**/*.{js,ts,vue,jsx,tsx}`
+            : "**/*.{js,ts,vue,jsx,tsx}";
+        } else {
+          searchPattern = "**/*.{js,ts,vue,jsx,tsx}";
+        }
+      } else {
+        searchPattern = `${srcPath}/**/*.{js,ts,vue,jsx,tsx}`;
+      }
+
+      const files = await vscode.workspace.findFiles(
+        searchPattern,
+        undefined,
+        500
+      );
+
+      for (const fileUri of files) {
+        const fsPath = fileUri.fsPath;
+        const ext = path.extname(fsPath);
+
+        if (!fileExtensions.includes(ext)) {
+          continue;
+        }
+
+        if (config && config.isScanIgnored && config.isScanIgnored(fsPath)) {
+          continue;
+        }
+
+        try {
+          const document = await vscode.workspace.openTextDocument(fileUri);
+          const content = document.getText();
+          const lines = content.split("\n");
+
+          const fileReplacements: Array<{
+            oldKey: string;
+            newKey: string;
+            line: number;
+            column: number;
+            context: string;
+          }> = [];
+
+          mergeMap.forEach((newKey, oldKey) => {
+            const patterns = [
+              new RegExp(`'${Utils.escapeRegExp(oldKey)}'`, "g"),
+              new RegExp(`"${Utils.escapeRegExp(oldKey)}"`, "g"),
+              new RegExp(`\`${Utils.escapeRegExp(oldKey)}\``, "g"),
+            ];
+
+            patterns.forEach((pattern) => {
+              let match;
+              while ((match = pattern.exec(content)) !== null) {
+                const position = document.positionAt(match.index);
+                const lineNum = position.line;
+                const columnNum = position.character;
+                const lineText = lines[lineNum] || "";
+
+                // 提供上下文，显示前后各20个字符
+                const start = Math.max(0, columnNum - 20);
+                const end = Math.min(
+                  lineText.length,
+                  columnNum + oldKey.length + 20
+                );
+                const context = lineText.substring(start, end);
+
+                fileReplacements.push({
+                  oldKey,
+                  newKey,
+                  line: lineNum + 1, // 转换为1基础行号
+                  column: columnNum + 1,
+                  context: context.trim(),
+                });
+              }
+            });
+          });
+
+          if (fileReplacements.length > 0) {
+            affectedFiles.push({
+              filePath: fsPath,
+              replacements: fileReplacements,
+            });
+          }
+
+          // 关闭文档
+          try {
+            const tabs = vscode.window.tabGroups.all.flatMap(
+              (group) => group.tabs
+            );
+            const tab = tabs.find(
+              (tab) =>
+                tab.input instanceof vscode.TabInputText &&
+                tab.input.uri.toString() === fileUri.toString()
+            );
+            if (tab) {
+              await vscode.window.tabGroups.close(tab);
+            }
+          } catch (closeError) {
+            // 忽略关闭错误
+          }
+        } catch (error) {
+          console.error(`预览文件 ${fsPath} 时出现错误:`, error);
+        }
+      }
+    } catch (error) {
+      console.error("预览影响文件时出现错误:", error);
+    }
+
+    return affectedFiles;
+  }
+
+  /**
+   * 合并类项命令：将默认语言文件中值相同的多个key合并成一个公共key
+   * @param config Config实例，用于获取配置信息
+   * @param defaultLangFilePath 默认语言文件路径（如zh.json）
+   * @param langFilePaths 所有语言文件路径数组
+   * @param srcPath 源代码目录路径（默认为src）
+   * @param onProgress 进度回调函数
+   * @param minDuplicateCount 最小重复次数，默认为2（即至少2个相同值才合并）
+   */
+  static async mergeCommonKeys(
+    config: any,
+    defaultLangFilePath: string,
+    langFilePaths: string[],
+    srcPath: string = "src",
+    onProgress?: (
+      phase: string,
+      current: number,
+      total: number,
+      detail?: string
+    ) => void,
+    minDuplicateCount: number = 2
+  ) {
+    try {
+      // 1. 读取默认语言文件
+      onProgress?.("读取语言文件", 1, 5);
+      const defaultLangContent = fs.readFileSync(defaultLangFilePath, "utf-8");
+      const defaultLangObj = Utils.parseJsonSafe(defaultLangContent);
+
+      if (!defaultLangObj) {
+        throw new Error(`无法解析默认语言文件: ${defaultLangFilePath}`);
+      }
+
+      // 2. 按值分组，找出重复的值
+      onProgress?.("分析重复值", 2, 5);
+      const valueGroups: Map<string, string[]> = new Map();
+
+      Object.entries(defaultLangObj).forEach(([key, value]) => {
+        const valueStr = String(value);
+        if (!valueGroups.has(valueStr)) {
+          valueGroups.set(valueStr, []);
+        }
+        valueGroups.get(valueStr)!.push(key);
+      });
+
+      // 3. 过滤出有重复值的组（根据最小重复次数）
+      const duplicateGroups = Array.from(valueGroups.entries()).filter(
+        ([_, keys]) => keys.length >= minDuplicateCount
+      );
+
+      if (duplicateGroups.length === 0) {
+        Message.showMessage(
+          `没有找到需要合并的重复值（最小重复次数: ${minDuplicateCount}）`,
+          MessageType.INFO
+        );
+        return;
+      }
+
+      // 4. 生成合并映射表
+      onProgress?.("生成合并映射", 3, 5);
+      const mergeMap: Map<string, string> = new Map(); // 旧key -> 新key
+      const mergedKeys: Map<string, string> = new Map(); // 新key -> 值
+
+      duplicateGroups.forEach(([value, oldKeys]) => {
+        // 生成hash
+        const crypto = require("crypto");
+        const hash = crypto
+          .createHash("md5")
+          .update(value)
+          .digest("hex")
+          .substring(0, 8);
+        let newKey = `common_${hash}`;
+
+        // 检查新key是否已存在，如存在则加时间戳
+        if (defaultLangObj[newKey] || mergedKeys.has(newKey)) {
+          const timestamp = Date.now();
+          newKey = `common_${hash}_${timestamp}`;
+        }
+
+        // 记录映射关系
+        oldKeys.forEach((oldKey) => {
+          mergeMap.set(oldKey, newKey);
+        });
+        mergedKeys.set(newKey, value);
+
+        console.log(`合并 ${oldKeys.join(", ")} -> ${newKey} (值: ${value})`);
+      });
+
+      // 5. 扫描并替换源代码文件
+      onProgress?.("替换源代码文件", 4, 5);
+      const workspaceFolder = vscode.workspace.workspaceFolders?.[0];
+      if (!workspaceFolder) {
+        throw new Error("未找到工作空间");
+      }
+
+      // 直接传递相对路径给 replaceKeysInSourceFiles，并提供文件级进度回调
+      await Utils.replaceKeysInSourceFiles(
+        srcPath,
+        mergeMap,
+        config,
+        (current, total, fileName) => {
+          onProgress?.(
+            "替换源代码文件",
+            4,
+            5,
+            `处理文件: ${fileName} (${current}/${total})`
+          );
+        }
+      );
+
+      // 6. 更新所有语言文件
+      onProgress?.("更新语言文件", 5, 5);
+      const defaultLang = config.getDefaultLang();
+      for (let i = 0; i < langFilePaths.length; i++) {
+        const langFilePath = langFilePaths[i];
+        const fileName = path.basename(langFilePath);
+        onProgress?.(
+          "更新语言文件",
+          5,
+          5,
+          `更新: ${fileName} (${i + 1}/${langFilePaths.length})`
+        );
+
+        await Utils.updateLanguageFile(
+          langFilePath,
+          mergeMap,
+          mergedKeys,
+          defaultLang
+        );
+      }
+
+      // 7. 显示结果
+      const mergedCount = duplicateGroups.length;
+      const totalOldKeys = duplicateGroups.reduce(
+        (sum, [_, keys]) => sum + keys.length,
+        0
+      );
+      const savedKeys = totalOldKeys - mergedCount;
+
+      Message.showMessage(
+        `合并完成！共合并了 ${mergedCount} 组重复项，节省了 ${savedKeys} 个key`,
+        MessageType.INFO
+      );
+    } catch (error) {
+      console.error("合并过程中出现错误:", error);
+      Message.showMessage(`合并失败: ${error.message}`, MessageType.ERROR);
+    }
+  }
+
+  /**
+   * 在源代码文件中替换key引用
+   */
+  private static async replaceKeysInSourceFiles(
+    srcPath: string,
+    mergeMap: Map<string, string>,
+    config: any,
+    onProgress?: (current: number, total: number, fileName: string) => void
+  ) {
+    const fileExtensions = [".js", ".ts", ".vue", ".jsx", ".tsx"];
+
+    try {
+      // 使用VS Code的workspace API查找文件
+      const workspaceFolder = vscode.workspace.workspaceFolders?.[0];
+      if (!workspaceFolder) {
+        throw new Error("未找到工作空间");
+      }
+
+      // 构建文件搜索pattern - 确保使用正确的相对路径格式
+      let searchPattern: string;
+      if (
+        srcPath.startsWith("/") ||
+        (srcPath.length > 1 && srcPath[1] === ":")
+      ) {
+        // 如果是绝对路径，转换为相对于工作空间的路径
+        const workspacePath = workspaceFolder.uri.fsPath;
+        if (srcPath.startsWith(workspacePath)) {
+          const relativePath = path
+            .relative(workspacePath, srcPath)
+            .replace(/\\/g, "/");
+          searchPattern = relativePath
+            ? `${relativePath}/**/*.{js,ts,vue,jsx,tsx}`
+            : "**/*.{js,ts,vue,jsx,tsx}";
+        } else {
+          // 绝对路径但不在工作空间内，使用原路径
+          searchPattern = `**/*.{js,ts,vue,jsx,tsx}`;
+        }
+      } else {
+        // 相对路径，直接使用
+        searchPattern = `${srcPath}/**/*.{js,ts,vue,jsx,tsx}`;
+      }
+
+      // 处理排除模式
+      let excludePattern: string | undefined;
+
+      console.log(`搜索文件pattern: ${searchPattern}`);
+      console.log(`排除pattern: ${excludePattern || "none"}`);
+      console.log(`工作空间路径: ${workspaceFolder.uri.fsPath}`);
+
+      // 使用VS Code API查找文件
+      const files = await vscode.workspace.findFiles(
+        searchPattern,
+        excludePattern,
+        1000 // 最大文件数限制
+      );
+
+      console.log(`找到 ${files.length} 个文件需要处理`);
+
+      if (files.length === 0) {
+        console.warn("未找到任何需要处理的文件");
+        return;
+      }
+
+      let updatedCount = 0;
+      let processedCount = 0;
+
+      for (const fileUri of files) {
+        const fsPath = fileUri.fsPath;
+        const fileName = path.basename(fsPath);
+
+        processedCount++;
+
+        // 报告进度
+        onProgress?.(processedCount, files.length, fileName);
+
+        // 检查文件扩展名
+        const ext = path.extname(fsPath);
+        if (!fileExtensions.includes(ext)) {
+          continue;
+        }
+
+        // 二次检查是否被 scanIgnoreGlobs 忽略
+        if (config && config.isScanIgnored && config.isScanIgnored(fsPath)) {
+          continue;
+        }
+
+        let document: vscode.TextDocument | null = null;
+
+        try {
+          // 使用VS Code API读取文件
+          document = await vscode.workspace.openTextDocument(fileUri);
+          let content = document.getText();
+          let hasChanges = false;
+
+          // 记录原始内容长度用于调试
+          const originalLength = content.length;
+
+          // 替换所有需要合并的key引用
+          mergeMap.forEach((newKey, oldKey) => {
+            // 匹配各种引用形式：'key', "key", `key`
+            const patterns = [
+              new RegExp(`'${Utils.escapeRegExp(oldKey)}'`, "g"),
+              new RegExp(`"${Utils.escapeRegExp(oldKey)}"`, "g"),
+              new RegExp(`\`${Utils.escapeRegExp(oldKey)}\``, "g"),
+            ];
+
+            patterns.forEach((pattern) => {
+              const matches = content.match(pattern);
+              if (matches && matches.length > 0) {
+                const quote = pattern.source.includes("\\'")
+                  ? "'"
+                  : pattern.source.includes('\\"')
+                  ? '"'
+                  : "`";
+                const replacement = `${quote}${newKey}${quote}`;
+                content = content.replace(pattern, replacement);
+                hasChanges = true;
+                console.log(
+                  `在文件 ${fsPath} 中将 ${oldKey} 替换为 ${newKey}，共 ${matches.length} 处`
+                );
+              }
+            });
+          });
+
+          if (hasChanges) {
+            // 使用VS Code API保存文件
+            const edit = new vscode.WorkspaceEdit();
+            const fullRange = new vscode.Range(
+              document.positionAt(0),
+              document.positionAt(originalLength)
+            );
+            edit.replace(fileUri, fullRange, content);
+
+            const success = await vscode.workspace.applyEdit(edit);
+            if (success) {
+              // 保存文件
+              await document.save();
+              updatedCount++;
+              console.log(`已更新文件: ${fsPath}`);
+            } else {
+              console.error(`更新文件失败: ${fsPath}`);
+            }
+          }
+        } catch (error) {
+          console.error(`处理文件 ${fsPath} 时出现错误:`, error);
+        } finally {
+          // 确保关闭文档，避免打开过多标签页
+          if (document) {
+            try {
+              // 如果文档在编辑器中打开，关闭它
+              const tabs = vscode.window.tabGroups.all.flatMap(
+                (group) => group.tabs
+              );
+              const tab = tabs.find(
+                (tab) =>
+                  tab.input instanceof vscode.TabInputText &&
+                  tab.input.uri.toString() === fileUri.toString()
+              );
+              if (tab) {
+                await vscode.window.tabGroups.close(tab);
+              }
+            } catch (closeError) {
+              // 忽略关闭错误，这不是关键操作
+              console.warn(`关闭文档 ${fsPath} 时出现警告:`, closeError);
+            }
+          }
+        }
+      }
+
+      console.log(`总共更新了 ${updatedCount} 个文件`);
+    } catch (error) {
+      console.error("查找和替换文件时出现错误:", error);
+      throw error;
+    }
+  }
+
+  /**
+   * 更新语言文件，删除旧key并添加新key
+   */
+  private static async updateLanguageFile(
+    filePath: string,
+    mergeMap: Map<string, string>,
+    mergedKeys: Map<string, string>,
+    defaultLang: string
+  ) {
+    try {
+      const content = fs.readFileSync(filePath, "utf-8");
+      const langObj = Utils.parseJsonSafe(content);
+
+      if (!langObj) {
+        console.warn(`无法解析语言文件: ${filePath}`);
+        return;
+      }
+
+      // 删除被合并的旧key
+      mergeMap.forEach((newKey, oldKey) => {
+        if (langObj.hasOwnProperty(oldKey)) {
+          delete langObj[oldKey];
+        }
+      });
+
+      // 添加新的合并key
+      mergedKeys.forEach((value, newKey) => {
+        if (!langObj.hasOwnProperty(newKey)) {
+          // 判断是否为默认语言文件
+          const fileName = path.basename(filePath);
+          const lang = fileName.split(".")[0];
+          const isDefaultLang = lang === defaultLang;
+          langObj[newKey] = isDefaultLang ? value : "";
+        }
+      });
+
+      // 写回文件
+      const newContent = JSON.stringify(langObj, null, 2);
+      fs.writeFileSync(filePath, newContent, "utf-8");
+      console.log(`已更新语言文件: ${filePath}`);
+    } catch (error) {
+      console.error(`更新语言文件 ${filePath} 时出现错误:`, error);
+    }
+  }
+
+  /**
+   * 转义正则表达式特殊字符
+   */
+  private static escapeRegExp(string: string): string {
+    return string.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
   }
 }
