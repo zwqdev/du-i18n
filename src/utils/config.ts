@@ -50,6 +50,7 @@ export class Config {
   private scanIgnoreRegexes: RegExp[]; // 预编译忽略规则
   private skipExtractCallees: string[]; // 跳过提取的函数调用名（例如 ['track','logger.track']）
   private minMergeCount: number; // 合并重复key的最小重复次数
+  private reuseExistingKey: boolean; // 是否重用已存在的key
 
   constructor(props: any = {}) {
     // 默认将配置文件放在工作区的 .vscode 目录
@@ -98,6 +99,7 @@ export class Config {
     this.scanIgnoreRegexes = [];
     this.skipExtractCallees = ["track", "trackClick"]; // 默认跳过 track 调用内部的字符串提取，可自行在配置中覆盖
     this.minMergeCount = 3; // 默认最小重复次数为3
+    this.reuseExistingKey = false; // 默认不重用已存在的key
   }
   async readConfig() {
     // 优先直接读取工作区 .vscode/yz-i18n.config.json（绝对路径）
@@ -141,6 +143,7 @@ export class Config {
         scanIgnoreGlobs,
         skipExtractCallees,
         minMergeCount,
+        reuseExistingKey,
         gjUserName = "yz_admin",
         gjPassword = "yz123456",
       } = config || {};
@@ -203,6 +206,9 @@ export class Config {
       if (typeof minMergeCount === "number" && minMergeCount > 0) {
         this.minMergeCount = minMergeCount;
       }
+      if (typeof reuseExistingKey === "boolean") {
+        this.reuseExistingKey = reuseExistingKey;
+      }
       // this.fileReg = fileReg || this.fileReg;
       this.gjUserName = gjUserName;
       this.gjPassword = gjPassword;
@@ -254,6 +260,10 @@ export class Config {
 
   getMinMergeCount() {
     return this.minMergeCount;
+  }
+
+  getReuseExistingKey() {
+    return this.reuseExistingKey;
   }
 
   // Use micromatch to convert glob patterns to regular expressions reliably

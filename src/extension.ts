@@ -366,28 +366,29 @@ export async function activate(context: vscode.ExtensionContext) {
               };
               // Get existing language object for key reuse optimization from langPaths
               let existingLangObj: any = null;
-              try {
-                const langPathsGlob = config.getLangPaths();
-                const defaultLang = config.getDefaultLang();
-                if (langPathsGlob) {
-                  const files = await FileIO.getFiles(langPathsGlob);
-                  const defaultLangFile = files.find(({ fsPath }) => {
-                    const fileName = path.basename(fsPath);
-                    return fileName === `${defaultLang}.json`;
-                  });
-                  if (defaultLangFile) {
-                    const rawContent = await fsp.readFile(
-                      defaultLangFile.fsPath,
-                      "utf-8"
-                    );
-                    existingLangObj = Utils.parseJsonSafe(rawContent);
+              if (config.getReuseExistingKey()) {
+                try {
+                  const langPathsGlob = config.getLangPaths();
+                  const defaultLang = config.getDefaultLang();
+                  if (langPathsGlob) {
+                    const files = await FileIO.getFiles(langPathsGlob);
+                    const defaultLangFile = files.find(({ fsPath }) => {
+                      const fileName = path.basename(fsPath);
+                      return fileName === `${defaultLang}.json`;
+                    });
+                    if (defaultLangFile) {
+                      const rawContent = await fsp.readFile(
+                        defaultLangFile.fsPath,
+                        "utf-8"
+                      );
+                      existingLangObj = Utils.parseJsonSafe(rawContent);
+                    }
                   }
+                } catch (e) {
+                  console.error("Failed to load existing language file:", e);
+                  existingLangObj = null;
                 }
-              } catch (e) {
-                console.error("Failed to load existing language file:", e);
-                existingLangObj = null;
               }
-              console.log("existingLangObj", existingLangObj);
               Utils.handleScanAndInit(
                 fileName,
                 initLang,
@@ -445,25 +446,27 @@ export async function activate(context: vscode.ExtensionContext) {
             const tempPaths = config.getTempPaths();
             // Get existing language object for key reuse optimization from langPaths
             let existingLangObj: any = null;
-            try {
-              const langPathsGlob = config.getLangPaths();
-              if (langPathsGlob) {
-                const files = await FileIO.getFiles(langPathsGlob);
-                const defaultLangFile = files.find(({ fsPath }) => {
-                  const fileName = path.basename(fsPath);
-                  return fileName === `${defaultLang}.json`;
-                });
-                if (defaultLangFile) {
-                  const rawContent = await fsp.readFile(
-                    defaultLangFile.fsPath,
-                    "utf-8"
-                  );
-                  existingLangObj = Utils.parseJsonSafe(rawContent);
+            if (config.getReuseExistingKey()) {
+              try {
+                const langPathsGlob = config.getLangPaths();
+                if (langPathsGlob) {
+                  const files = await FileIO.getFiles(langPathsGlob);
+                  const defaultLangFile = files.find(({ fsPath }) => {
+                    const fileName = path.basename(fsPath);
+                    return fileName === `${defaultLang}.json`;
+                  });
+                  if (defaultLangFile) {
+                    const rawContent = await fsp.readFile(
+                      defaultLangFile.fsPath,
+                      "utf-8"
+                    );
+                    existingLangObj = Utils.parseJsonSafe(rawContent);
+                  }
                 }
+              } catch (e) {
+                console.error("Failed to load existing language file:", e);
+                existingLangObj = null;
               }
-            } catch (e) {
-              console.error("Failed to load existing language file:", e);
-              existingLangObj = null;
             }
 
             FileIO.getFolderFiles(folderPath)
