@@ -4,8 +4,8 @@ import { md5 } from "js-md5";
 const JSEncrypt = require("jsencrypt");
 
 const publicUrl =
-  "https://login-gj.test.yingzi.com/api/sso/v1/security/keyPair/public";
-const loginUrl = "https://login-gj.test.yingzi.com/api/sso/v1/auth/login";
+  "https://login.test.yingzi.com/api/sso/v1/security/keyPair/public";
+const loginUrl = "https://login.test.yingzi.com/api/sso/v1/auth/login";
 
 const GET = async (url: any, params: any = {}) => {
   const apiUrl = Object.entries(params)
@@ -62,8 +62,6 @@ export class API {
 
 /**
  * 账号密码登录（RSA+md5签名），固定接口地址：
- * 1) 公钥:  https://login-gj.test.yingzi.com/api/sso/v1/security/keyPair/public
- * 2) 登录:  https://login-gj.test.yingzi.com/api/sso/v1/auth/login
  *
  * captcha 可选，结构 { captchaSig?, captchaToken?, captchaSessionId? }
  */

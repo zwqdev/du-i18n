@@ -1,13 +1,12 @@
-import { API } from './api';
+import { API } from "./api";
 
 export class YZ {
   /**
    * 翻译
    */
   static getTranslate = async (params: any = {}) => {
-    // 改为调用新接口：POST https://api-fpfoc-gj.test.yingzi.com/api/fpf/oc/difyTest
-    const { cookie, query, inputLanguage = '中文' } = params;
-    const postUrl = 'https://api-fpfoc-gj.test.yingzi.com/api/fpf/oc/difyTest';
+    const { cookie, query, inputLanguage = "中文" } = params;
+    const postUrl = "https://api-fpfoc.test.yingzi.com/api/fpf/oc/difyTest";
     const postData = {
       query: query,
       inputLanguage,
