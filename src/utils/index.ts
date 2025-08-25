@@ -2445,7 +2445,17 @@ export class Utils {
       } else {
         const insertPos = lastImportEnd || 0;
         const quote = detectQuoteStyle(scriptContent) || "'";
-        const importText = buildImportText(hookSpec, hookModule, quote) + "\n";
+
+        // Check if there's already a newline after the insert position
+        const hasNewlineAfter =
+          insertPos < scriptContent.length &&
+          (scriptContent[insertPos] === "\n" ||
+            (scriptContent[insertPos] === "\r" &&
+              scriptContent[insertPos + 1] === "\n"));
+
+        const importText =
+          buildImportText(hookSpec, hookModule, quote) +
+          (hasNewlineAfter ? "" : "\n");
         if (insertPos === 0) ms.prepend(importText);
         else ms.appendLeft(insertPos, importText);
       }
@@ -2499,8 +2509,33 @@ export class Utils {
         );
         if (moduleRe.test(content)) return content;
         const quote = detectQuoteStyle(content) || "'";
-        const importText = buildImportText(hookSpec, hookModule, quote) + "\n";
-        if (imports.length === 0) {
+
+        // Check if there are already trailing newlines after the last import
+        if (imports.length > 0) {
+          const last = imports[imports.length - 1];
+          const lastIndexRaw = content.lastIndexOf(last) + last.length;
+          const afterLast = content.slice(lastIndexRaw);
+          const hasNewlineAfter =
+            afterLast.startsWith("\n") || afterLast.startsWith("\r\n");
+          const importText =
+            buildImportText(hookSpec, hookModule, quote) +
+            (hasNewlineAfter ? "" : "\n");
+
+          const prefix = content.slice(0, lastIndexRaw);
+          let suffix = content.slice(lastIndexRaw);
+          const prefixNorm = prefix.replace(/\n*$/, "\n");
+          const suffixNorm = suffix.replace(/^\n*/, "");
+          let result = prefixNorm + importText + suffixNorm;
+          // ensure semicolon+import spacing (e.g. "...';import ...")
+          result = result.replace(/;\s*(?=import\b)/g, ";\n");
+          result = result.replace(
+            /from\s+((?:'[^']*'|"[^"]*"))\s*(?=import\b)/g,
+            "from $1\n"
+          );
+          return result;
+        } else {
+          const importText =
+            buildImportText(hookSpec, hookModule, quote) + "\n";
           if (content.startsWith("#!")) {
             const firstNewline = content.indexOf("\n");
             if (firstNewline !== -1) {
@@ -2513,20 +2548,6 @@ export class Utils {
           }
           return importText + content;
         }
-        const last = imports[imports.length - 1];
-        const lastIndexRaw = content.lastIndexOf(last) + last.length;
-        const prefix = content.slice(0, lastIndexRaw);
-        let suffix = content.slice(lastIndexRaw);
-        const prefixNorm = prefix.replace(/\n*$/, "\n");
-        const suffixNorm = suffix.replace(/^\n*/, "");
-        let result = prefixNorm + importText + suffixNorm;
-        // ensure semicolon+import spacing (e.g. "...';import ...")
-        result = result.replace(/;\s*(?=import\b)/g, ";\n");
-        result = result.replace(
-          /from\s+((?:'[^']*'|"[^"]*"))\s*(?=import\b)/g,
-          "from $1\n"
-        );
-        return result;
       } catch (ee) {
         return content;
       }
