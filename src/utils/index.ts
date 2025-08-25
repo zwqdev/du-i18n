@@ -2744,7 +2744,8 @@ export class Utils {
               updateBar();
             }
             if (!data || !data.data) {
-              reject(new Error("翻译失败"));
+              const msg = data.code !== "000000" ? data.msg : "翻译失败";
+              reject(new Error(msg));
               return;
             }
             resolve({ q, data });

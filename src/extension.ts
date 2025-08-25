@@ -676,7 +676,7 @@ export async function activate(context: vscode.ExtensionContext) {
                   await Utils.getTransSourceObjByLlm(
                     localLangObj,
                     langKey,
-                    `test_gj_ticket=${login.data}`,
+                    `nonprod_ticket=${login.data}`,
                     {
                       label: "单文件翻译",
                     },
@@ -1415,7 +1415,7 @@ export async function activate(context: vscode.ExtensionContext) {
               Message.showMessage(login?.msg || "登录失败");
               return;
             }
-            cookie = `test_gj_ticket=${login.data}`;
+            cookie = `nonprod_ticket=${login.data}`;
             const statusBar = vscode.window.createStatusBarItem(
               vscode.StatusBarAlignment.Left
             );
