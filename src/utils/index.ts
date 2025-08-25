@@ -444,7 +444,8 @@ export class Utils {
     prefixKey: string,
     hookImport: string,
     skipExtractCallees: string[],
-    cb: Function
+    cb: Function,
+    existingLangObj?: any
   ) {
     try {
       Utils.astProcessFile(
@@ -458,6 +459,7 @@ export class Utils {
           skipExtractCallees: Array.isArray(skipExtractCallees)
             ? skipExtractCallees
             : [],
+          existingLangObj: existingLangObj,
         }
       )
         .then((newLangObj: any) => {
@@ -479,7 +481,10 @@ export class Utils {
     defaultLang: string,
     prefixKey: string,
     hookImport: string,
-    options: { skipExtractCallees?: string[] } = {}
+    options: {
+      skipExtractCallees?: string[];
+      existingLangObj?: any; // 已存在的语言对象，用于查找现有key
+    } = {}
   ) {
     try {
       const code = fs.readFileSync(filePath, "utf-8");
@@ -497,6 +502,7 @@ export class Utils {
           initLang,
           hookImport,
           skipExtractCallees: options.skipExtractCallees || [],
+          existingLangObj: options.existingLangObj,
         });
       }
 
@@ -525,6 +531,8 @@ export class Utils {
           jsx: /\.(jsx|tsx)$/.test(filePath),
           skipExtractCallees: options.skipExtractCallees || [],
           keyOffset,
+          existingLangObj: options.existingLangObj,
+          defaultLang,
         });
         if (!found.length) return null;
         // If a hookImport is provided, attempt to inject it into the transformed script
@@ -705,6 +713,8 @@ export class Utils {
       skipExtractCallees?: string[];
       keyOffset?: number; // 新增：全局 key 偏移（用于 Vue 模板已占用的条目数）
       keyNamespace?: string; // 可选：当提供时，生成的 key 使用此命名空间 (例如 "prefixscript.")
+      existingLangObj?: any; // 已存在的语言对象，用于查找现有key
+      defaultLang?: string; // 默认语言，用于在existingLangObj中查找
     }
   ): { code: string; found: string[]; varObj: any } {
     const {
@@ -714,6 +724,8 @@ export class Utils {
       skipExtractCallees = [],
       keyOffset = 0,
       keyNamespace,
+      existingLangObj,
+      defaultLang,
     } = opts;
     // 收集需要忽略提取的行（含有 @i18n-ignore 标记的行，或紧随其后的下一行）
     const ignoreLineSet = new Set<number>();
@@ -768,7 +780,31 @@ export class Utils {
     const varObj: Record<string, { newKey: string; varList: string[] }> = {};
     const scriptCalleeName = quoteKeys[1] || "i18n.t";
     const jsxCalleeName = quoteKeys[0] || "$t";
+
+    // 查找已存在的key的辅助函数
+    const findExistingKey = (chineseText: string): string | null => {
+      if (!existingLangObj || !defaultLang) {
+        return null;
+      }
+      const langData = existingLangObj;
+      // 遍历所有key-value对，查找匹配的中文文本
+      for (const [key, value] of Object.entries(langData)) {
+        if (String(value) === chineseText) {
+          return key;
+        }
+      }
+      return null;
+    };
+
     const allocateKey = (original: string) => {
+      // 首先尝试查找已存在的key
+      const existingKey = findExistingKey(original);
+      if (existingKey) {
+        // 如果找到已存在的key，直接使用，但不添加到found数组（因为不需要生成新的翻译）
+        return existingKey;
+      }
+
+      // 如果没有找到，生成新的key
       const idx = found.length; // 局部索引
       found.push(original);
       // 如果提供了命名空间（例如在 Vue SFC 中希望使用 `${prefix}script.`），优先使用它并从 0 开始编号
@@ -1089,6 +1125,7 @@ export class Utils {
       initLang: string[];
       hookImport: string;
       skipExtractCallees?: string[];
+      existingLangObj?: any;
     }
   ) {
     try {
@@ -1166,7 +1203,36 @@ export class Utils {
             )
           : /\b__never_match__\b/; // 无配置时永远不匹配
         let tplIndex = 0; // local counter for tpl keys (relative)
+
+        // 查找已存在的key的辅助函数（Vue模板版本）
+        const findExistingKeyLocal = (chineseText: string): string | null => {
+          if (
+            !ctx.existingLangObj ||
+            !ctx.defaultLang ||
+            !ctx.existingLangObj[ctx.defaultLang]
+          ) {
+            return null;
+          }
+
+          const langData = ctx.existingLangObj[ctx.defaultLang];
+          // 遍历所有key-value对，查找匹配的中文文本
+          for (const [key, value] of Object.entries(langData)) {
+            if (String(value) === chineseText) {
+              return key;
+            }
+          }
+          return null;
+        };
+
         const allocateKeyLocal = (val: string) => {
+          // 首先尝试查找已存在的key
+          const existingKey = findExistingKeyLocal(val);
+          if (existingKey) {
+            // 如果找到已存在的key，直接使用，但不添加到foundList（因为不需要生成新的翻译）
+            return existingKey;
+          }
+
+          // 如果没有找到，生成新的key
           const idx = tplIndex++;
           foundList.push(`__TPL__${val}`); // 用特殊前缀占位，后面统一转换
           // Use computed tplStartBase to avoid reusing existing indices
@@ -1663,6 +1729,8 @@ export class Utils {
               scriptStartBase,
             // Ensure script-generated keys use the script namespace so they match returned langObj
             keyNamespace: `${ctx.prefixKey}script.`,
+            existingLangObj: ctx.existingLangObj,
+            defaultLang: ctx.defaultLang,
           });
           if (found.length) {
             // Use descriptor loc when available to compute absolute positions for replacement

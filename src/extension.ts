@@ -364,6 +364,30 @@ export async function activate(context: vscode.ExtensionContext) {
                 await config.refreshGlobalLangObj();
                 VSCodeUI.renderDecoration(config);
               };
+              // Get existing language object for key reuse optimization from langPaths
+              let existingLangObj: any = null;
+              try {
+                const langPathsGlob = config.getLangPaths();
+                const defaultLang = config.getDefaultLang();
+                if (langPathsGlob) {
+                  const files = await FileIO.getFiles(langPathsGlob);
+                  const defaultLangFile = files.find(({ fsPath }) => {
+                    const fileName = path.basename(fsPath);
+                    return fileName === `${defaultLang}.json`;
+                  });
+                  if (defaultLangFile) {
+                    const rawContent = await fsp.readFile(
+                      defaultLangFile.fsPath,
+                      "utf-8"
+                    );
+                    existingLangObj = Utils.parseJsonSafe(rawContent);
+                  }
+                }
+              } catch (e) {
+                console.error("Failed to load existing language file:", e);
+                existingLangObj = null;
+              }
+              console.log("existingLangObj", existingLangObj);
               Utils.handleScanAndInit(
                 fileName,
                 initLang,
@@ -386,7 +410,8 @@ export async function activate(context: vscode.ExtensionContext) {
                       }
                     );
                   }
-                }
+                },
+                existingLangObj
               );
             }
           } catch (e) {
@@ -418,6 +443,28 @@ export async function activate(context: vscode.ExtensionContext) {
             const keys = config.getQuoteKeys();
             const defaultLang = config.getDefaultLang();
             const tempPaths = config.getTempPaths();
+            // Get existing language object for key reuse optimization from langPaths
+            let existingLangObj: any = null;
+            try {
+              const langPathsGlob = config.getLangPaths();
+              if (langPathsGlob) {
+                const files = await FileIO.getFiles(langPathsGlob);
+                const defaultLangFile = files.find(({ fsPath }) => {
+                  const fileName = path.basename(fsPath);
+                  return fileName === `${defaultLang}.json`;
+                });
+                if (defaultLangFile) {
+                  const rawContent = await fsp.readFile(
+                    defaultLangFile.fsPath,
+                    "utf-8"
+                  );
+                  existingLangObj = Utils.parseJsonSafe(rawContent);
+                }
+              }
+            } catch (e) {
+              console.error("Failed to load existing language file:", e);
+              existingLangObj = null;
+            }
 
             FileIO.getFolderFiles(folderPath)
               .then(async (files: any[]) => {
@@ -477,6 +524,7 @@ export async function activate(context: vscode.ExtensionContext) {
                                   {
                                     skipExtractCallees:
                                       config.getSkipExtractCallees(),
+                                    existingLangObj: existingLangObj,
                                   }
                                 );
                               } catch (e) {
