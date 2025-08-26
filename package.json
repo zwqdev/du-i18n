@@ -88,11 +88,11 @@
       "editor/context": [
         {
           "when": "resourceExtname =~ /\\.(ts|js|tsx|jsx|vue|mpx|html|json|yaml|yml)$/",
-          "submenu": "submenu/command",
+          "submenu": "yz-i18n.submenu.command",
           "group": "navigation"
         }
       ],
-      "submenu/command": [
+      "yz-i18n.submenu.command": [
         {
           "command": "extension.yz.i18n.change",
           "group": "7_modification@3"
@@ -141,7 +141,7 @@
     },
     "submenus": [
       {
-        "id": "submenu/command",
+        "id": "yz-i18n.submenu.command",
         "label": "FPF国际化"
       }
     ],
