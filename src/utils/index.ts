@@ -2772,7 +2772,7 @@ export class Utils {
       result.transSourceObj = transSourceObj;
       return result;
     } catch (e: any) {
-      Message.showMessage(e.message || "翻译失败");
+      result.message = e.message || "翻译失败";
       return result;
     } finally {
       if (statusBarItem && internalCreated) {

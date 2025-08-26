@@ -807,7 +807,7 @@ export async function activate(context: vscode.ExtensionContext) {
                         await Utils.getTransSourceObjByLlm(
                           transObj,
                           langKey,
-                          `test_gj_ticket=${login.data}`,
+                          `nonprod_ticket=${login.data}`,
                           {
                             total: totalBatches,
                             offset: fileOffset,
