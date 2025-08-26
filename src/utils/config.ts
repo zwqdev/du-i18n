@@ -31,11 +31,9 @@ export class Config {
   private uncheckMissKeys: string[];
   private prefixKey: string | null;
   private keyJoinStr: string | null;
-  private keyBoundaryChars: string[];
   private missCheckResultPath: string;
   private languageMissOnlinePath: string;
   private isNeedRandSuffix: boolean;
-  private isSingleQuote: boolean;
   private isOnlineTrans: boolean;
   private hookImport: string;
   private baiduAppid: string;
@@ -44,7 +42,6 @@ export class Config {
   private jsonReg: RegExp;
   private gjUserName: string;
   private gjPassword: string;
-  public isLogin: boolean;
   private transBatchSize: number; // 翻译批次大小（可配置）
   private scanIgnoreGlobs: string[]; // 批量扫描忽略的glob模式
   private scanIgnoreRegexes: RegExp[]; // 预编译忽略规则
@@ -61,7 +58,7 @@ export class Config {
     this.version = ""; // deyi版本
     this.langPaths = "**/src/locales/**"; // 语言文件路径
     this.transSourcePaths = "**/src/locales/source/**"; // 翻译源文件路径
-    this.tempPaths = "**/src/locales/temp/**"; // 新增翻译文案路径
+    this.tempPaths = "**/src/locales/temp/**"; // 临时翻译文案路径
     this.tempFileName = ""; // 指定生成json文件名
     this.localLangFilePath = "/.language.md"; // 拉取远程语言保存本地文件路径
     this.missCheckResultPath = "/.languageMissLocal.md"; // 翻译漏检本地文件路径
@@ -74,12 +71,10 @@ export class Config {
     this.pullLangs = []; // 指定翻译扩展的语言，优先级比tempLangs高，远程不允许覆盖
     this.tempLangs = ["zh", "en", "ko", "ru"]; // 翻译扩展语言，远程的会覆盖
     this.quoteKeys = ["$t", "i18n.global.t"]; // 引用key
-    this.keyBoundaryChars = []; // 引用key的边界字符
     this.bigFileLineCount = 1000; // 大文件行数
     this.isOverWriteLocal = false; // 是否覆盖本地已填写的翻译
     this.uncheckMissKeys = []; // 跳过翻译漏检机制的key，打标已翻译
     this.isNeedRandSuffix = true; // tempPaths下的文件是否生成文件名后缀
-    this.isSingleQuote = true; // key的引用是单引号还是双引号，默认是单引号
     this.prefixKey = null; // key前缀
     this.keyJoinStr = null; // key连接符
 
@@ -91,7 +86,6 @@ export class Config {
 
     this.fileReg = /\.(ts|js|tsx|jsx|vue|html|mpx)$/; // 识别的文件
     this.jsonReg = /\.(json)$/; // json文件
-    this.isLogin = false; // 登录状态
     this.gjUserName = "yz_admin"; // 用户名
     this.gjPassword = "yz123456"; // 密码
     this.transBatchSize = 10; // 默认翻译批次大小
@@ -129,13 +123,11 @@ export class Config {
         fileReg,
         isNeedRandSuffix,
         langPaths,
-        isSingleQuote,
         isOnlineTrans,
         baiduAppid,
         baiduSecrectKey,
         prefixKey,
         keyJoinStr,
-        keyBoundaryChars,
         hookImport,
         transBatchSize,
         scanIgnoreGlobs,
@@ -161,10 +153,6 @@ export class Config {
         Array.isArray(quoteKeys) && quoteKeys.length
           ? quoteKeys
           : this.quoteKeys;
-      this.keyBoundaryChars =
-        Array.isArray(keyBoundaryChars) && keyBoundaryChars.length
-          ? keyBoundaryChars
-          : this.keyBoundaryChars;
       this.transSourcePaths = transSourcePaths || this.transSourcePaths;
       this.tempPaths = tempPaths || this.tempPaths;
       this.tempFileName = tempFileName;
@@ -178,8 +166,6 @@ export class Config {
           ? isNeedRandSuffix
           : this.isNeedRandSuffix;
       this.langPaths = langPaths || this.langPaths;
-      this.isSingleQuote =
-        typeof isSingleQuote === "boolean" ? isSingleQuote : this.isSingleQuote;
       this.isOnlineTrans =
         typeof isOnlineTrans === "boolean" ? isOnlineTrans : this.isOnlineTrans;
       this.baiduAppid = baiduAppid;
@@ -297,10 +283,6 @@ export class Config {
       langPaths: this.langPaths,
       // 新增翻译文案路径
       tempPaths: this.tempPaths,
-      // 指定生成json文件名
-      tempFileName: this.tempFileName,
-      // 复杂文件夹
-      multiFolders: this.multiFolders,
       // key前缀，默认为null，前两层文件名如'base.index.'
       prefixKey: this.prefixKey,
       // 是否开启hook的i18n引入
@@ -376,10 +358,6 @@ export class Config {
     return "";
   }
 
-  getKeyBoundaryChars() {
-    return this.keyBoundaryChars;
-  }
-
   getFileReg() {
     return this.fileReg;
   }
@@ -429,10 +407,6 @@ export class Config {
 
   getIsNeedRandSuffix() {
     return this.isNeedRandSuffix;
-  }
-
-  getIsSingleQuote() {
-    return this.isSingleQuote;
   }
 
   getLangPaths() {
@@ -539,7 +513,6 @@ export class Config {
     const initConfigObj = this.getInitConfig();
     const configFilePath = this.getConfigFilePath();
     const configPath = await FileIO.getBaseFilePath(fileName, configFilePath);
-    // console.log('configPath', configPath);
     fs.access(configPath, async function (err) {
       // console.log('err', err);
       let isInit = false;

@@ -358,7 +358,6 @@ export async function activate(context: vscode.ExtensionContext) {
               const pageEnName = config.generatePageEnName(fileName);
               const tempFileName = config.getTempFileName();
               const isNeedRandSuffix = config.getIsNeedRandSuffix();
-              // removed unused params isSingleQuote & keyBoundaryChars in refactor
               const isHookImport = config.getHookImport();
               const handleRefresh = async () => {
                 await config.refreshGlobalLangObj();
