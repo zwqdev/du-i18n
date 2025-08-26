@@ -2524,27 +2524,50 @@ export class Utils {
         const importText =
           buildImportText(hookSpec, hookModule, quote) +
           (hasNewlineAfter ? "" : "\n");
-        if (insertPos === 0) ms.prepend(importText);
-        else ms.appendLeft(insertPos, importText);
+
+        if (insertPos === 0) {
+          // For Vue SFC: when inserting at the beginning of script content,
+          // ensure proper spacing after the script tag
+          const leadingNewline =
+            scriptContent.startsWith("\n") || scriptContent.startsWith("\r\n")
+              ? ""
+              : "\n";
+          ms.prepend(leadingNewline + importText);
+        } else {
+          ms.appendLeft(insertPos, importText);
+        }
       }
 
       let newScript = ms.toString();
-      // If the script block starts immediately after the opening tag (no newline),
-      // ensure we add a leading newline so inserted imports don't sit on the same
-      // line as the tag: `<script setup>import ...` -> `<script setup>\nimport ...`.
+      // For Vue SFC files: ensure proper newline handling after script tag
       try {
         if (
           typeof scriptStart === "number" &&
           scriptStart > 0 &&
-          content[scriptStart - 1] === ">" &&
-          !newScript.startsWith("\n")
+          content[scriptStart - 1] === ">"
         ) {
-          // Check if the original content already has a newline after the tag
-          // Handle both LF (\n) and CRLF (\r\n) line endings
+          // Check if the original script content starts with a newline
           const hasExistingNewline =
             scriptContent.startsWith("\n") || scriptContent.startsWith("\r\n");
-          if (!hasExistingNewline) {
+
+          // If the new script doesn't start with newline but original did, preserve it
+          if (
+            hasExistingNewline &&
+            !newScript.startsWith("\n") &&
+            !newScript.startsWith("\r\n")
+          ) {
             newScript = "\n" + newScript;
+          }
+          // If original didn't have newline but we're adding imports at the beginning,
+          // ensure there's a newline after the script tag
+          else if (!hasExistingNewline && newScript !== scriptContent) {
+            // Only add newline if we actually modified the content
+            const originalFirstLine =
+              scriptContent.split("\n")[0] || scriptContent;
+            const newFirstLine = newScript.split("\n")[0] || newScript;
+            if (originalFirstLine !== newFirstLine) {
+              newScript = "\n" + newScript;
+            }
           }
         }
       } catch (e) {
