@@ -25,7 +25,7 @@ const RegCache = new MapCache();
 const chineseCharReg = /[\u4e00-\u9fa5]/;
 let decorationType = null;
 const boundaryCodes = ['"', "'", "`"]; // 字符串边界
-const SPLIT = "---$$_$$---";
+const SPLIT = "\u2060\u200D";
 // 统一翻译批次大小默认值（可通过配置覆盖）
 export const DEFAULT_TRANS_BATCH_SIZE = 10;
 
