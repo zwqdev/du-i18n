@@ -78,7 +78,7 @@ export class Config {
     this.prefixKey = null; // key前缀
     this.keyJoinStr = null; // key连接符
 
-    this.hookImport = ""; // 是否需要hook引入i18n
+    this.hookImport = "import i18n from '@/utils/vueI18n'"; // 是否需要hook引入i18n
 
     this.isOnlineTrans = true; // 本地-是否支持在线翻译
     this.baiduAppid = "xxx"; // 百度翻译appid

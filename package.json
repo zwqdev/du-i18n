@@ -80,6 +80,10 @@
         "title": "合并重复值的key"
       },
       {
+        "command": "extension.yz.i18n.mergeCommonKeys",
+        "title": "合并重复值的key"
+      },
+      {
         "command": "extension.yz.i18n.missingDetection",
         "title": "翻译漏检"
       }
