@@ -1249,18 +1249,87 @@ export async function activate(context: vscode.ExtensionContext) {
 
               // 生成 trans_miss.json 文件
               const tempPathDir = tempPaths.replace(/\*/g, "");
+
+              // 获取工作区根目录
+              const workspaceRoot =
+                vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
+
+              // 规范化路径处理
+              let absoluteTempPath: string;
+              if (workspaceRoot) {
+                // 移除开头的斜杠，确保是相对路径
+                let cleanPath = tempPathDir;
+                if (cleanPath.startsWith("/") || cleanPath.startsWith("\\")) {
+                  cleanPath = cleanPath.substring(1);
+                }
+                absoluteTempPath = path.join(workspaceRoot, cleanPath);
+              } else {
+                // 如果没有工作区，使用原路径
+                absoluteTempPath = tempPathDir;
+              }
+
+              // 规范化路径分隔符
+              absoluteTempPath = path.normalize(absoluteTempPath);
+
               const missFileName = "trans_miss.json";
-              const missFilePath = await FileIO.createDirFile(
-                tempPathDir,
-                missFileName,
-                JSON.stringify(optimizedResult, null, "\t")
-              );
+
+              // 使用改进的文件创建方法，添加错误处理
+              let missFilePath: string;
+              try {
+                // 确保目录存在
+                if (!fs.existsSync(absoluteTempPath)) {
+                  fs.mkdirSync(absoluteTempPath, { recursive: true });
+                }
+
+                // 构建完整文件路径
+                missFilePath = path.join(absoluteTempPath, missFileName);
+
+                // 写入文件
+                const content = JSON.stringify(optimizedResult, null, "\t");
+                fs.writeFileSync(missFilePath, content, "utf8");
+
+                // 验证文件是否真的被创建
+                if (fs.existsSync(missFilePath)) {
+                  const stats = fs.statSync(missFilePath);
+                } else {
+                  throw new Error("文件写入后仍然不存在");
+                }
+              } catch (error) {
+                Message.showMessage(
+                  `创建翻译漏检文件失败: ${error.message}`,
+                  MessageType.ERROR
+                );
+                return;
+              }
 
               if (missFilePath) {
+                // 确保文件写入完成后刷新文件系统视图
+                await new Promise((resolve) => setTimeout(resolve, 300)); // 增加延迟确保文件写入完成
+
+                // 刷新文件系统视图，确保新文件在目录中可见
+                try {
+                  await vscode.commands.executeCommand(
+                    "workbench.files.action.refreshFilesExplorer"
+                  );
+                } catch (refreshError) {
+                  console.warn("刷新文件浏览器失败:", refreshError);
+                }
+
+                // 使用 vscode.Uri.file 确保文件被正确识别
+                const fileUri = vscode.Uri.file(missFilePath);
+
                 // 打开生成的文件
-                vscode.workspace.openTextDocument(missFilePath).then((doc) => {
-                  vscode.window.showTextDocument(doc);
-                });
+                try {
+                  const doc = await vscode.workspace.openTextDocument(fileUri);
+                  await vscode.window.showTextDocument(doc);
+                  console.log("文件打开成功");
+                } catch (openError) {
+                  console.error("打开文件失败:", openError);
+                  Message.showMessage(
+                    "文件创建成功但打开失败",
+                    MessageType.WARNING
+                  );
+                }
 
                 // 计算缺失统计
                 const stats: string[] = [];
@@ -1279,12 +1348,33 @@ export async function activate(context: vscode.ExtensionContext) {
                   }
                 });
 
+                // 显示文件路径信息
+                const workspaceRoot =
+                  vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
+                const relativePath = workspaceRoot
+                  ? path.relative(workspaceRoot, missFilePath)
+                  : missFilePath;
+
                 const message =
                   stats.length > 0
-                    ? `翻译漏检完成，发现: ${stats.join(", ")}`
-                    : "翻译漏检完成，已生成报告文件";
+                    ? `翻译漏检完成，发现: ${stats.join(
+                        ", "
+                      )}。文件已保存至: ${relativePath}`
+                    : `翻译漏检完成，已生成报告文件: ${relativePath}`;
 
                 Message.showMessage(message, MessageType.INFO);
+
+                // 显示一个可点击的通知，让用户可以在文件浏览器中定位文件
+                vscode.window
+                  .showInformationMessage(
+                    `翻译漏检报告已生成`,
+                    "在文件浏览器中显示"
+                  )
+                  .then((selection) => {
+                    if (selection === "在文件浏览器中显示") {
+                      vscode.commands.executeCommand("revealFileInOS", fileUri);
+                    }
+                  });
               } else {
                 Message.showMessage("生成翻译漏检文件失败", MessageType.ERROR);
               }
