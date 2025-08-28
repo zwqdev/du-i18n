@@ -77,10 +77,6 @@
       },
       {
         "command": "extension.yz.i18n.previewMergeCommonKeys",
-        "title": "预览合并重复值的key"
-      },
-      {
-        "command": "extension.yz.i18n.mergeCommonKeys",
         "title": "合并重复值的key"
       },
       {
@@ -128,10 +124,6 @@
         {
           "command": "extension.yz.i18n.previewMergeCommonKeys",
           "group": "5_cutcopypaste@28"
-        },
-        {
-          "command": "extension.yz.i18n.mergeCommonKeys",
-          "group": "5_cutcopypaste@29"
         },
         {
           "command": "extension.yz.i18n.updateLocalLangPackage",
