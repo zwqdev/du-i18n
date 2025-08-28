@@ -2675,28 +2675,41 @@ export class Utils {
     if (isEmpty(defaultSource)) return result;
 
     let langKey = "en";
-    // 组织需要翻译的源文案：遍历除默认语言外的语言，收集缺失项
+
+    // 第一步：确保所有语言都包含默认语言的所有key
+    Object.entries(localLangObj).forEach(([lang, obj]) => {
+      if (lang === defaultLang) return;
+
+      // 确保该语言包含默认语言的所有key，缺失的设为空字符串
+      Object.keys(defaultSource).forEach((k) => {
+        if (!(obj as any).hasOwnProperty(k)) {
+          (obj as any)[k] = "";
+        }
+      });
+    });
+
+    // 第二步：收集所有语言的翻译需求，基于默认语言的所有key
+    const allNeedTranslationKeys = new Set<string>();
     Object.entries(localLangObj).forEach(([lang, obj]) => {
       if (lang === defaultLang) return;
       if (!transSourceObj[lang]) transSourceObj[lang] = {};
+      langKey = lang; // 记录一个有效的目标语言
 
-      if (isEmpty(obj)) {
-        Object.keys(defaultSource).forEach((k) => {
-          (obj as any)[k] = "";
-        });
-      }
-      Object.keys(obj as any).forEach((k) => {
+      // 基于默认语言的所有key来检查翻译需求
+      Object.keys(defaultSource).forEach((k) => {
         if (!(obj as any)[k]) {
-          langKey = lang;
+          // 空值需要翻译
           const keyStr = defaultSource[k];
-          transSourceObj[lang][keyStr] = (obj as any)[k];
+          if (keyStr) {
+            transSourceObj[lang][keyStr] = "";
+            allNeedTranslationKeys.add(keyStr);
+          }
         }
       });
     });
 
     const batchSize = options?.batchSize || DEFAULT_TRANS_BATCH_SIZE;
-    const getTransText = (obj: any = {}, max: number = batchSize) => {
-      const keys = Object.keys(obj);
+    const getTransText = (keys: string[], max: number = batchSize) => {
       return chunk(keys, max);
     };
 
@@ -2714,10 +2727,13 @@ export class Utils {
       俄文: "ru",
       越文: "vi",
     };
-    const qArr = getTransText(transSourceObj[langKey]);
+
+    // 基于所有需要翻译的中文文案来计算批次，而不是某个特定语言的缺失项
+    const allTranslationKeys = Array.from(allNeedTranslationKeys);
+    const qArr = getTransText(allTranslationKeys);
     result.batchCount = qArr ? qArr.length : 0;
     if (!qArr || !qArr.length) {
-      result.message = `${defaultLang}的源文案不能为空！`;
+      result.message = `没有需要翻译的内容！`;
       return result;
     }
 
@@ -2814,23 +2830,35 @@ export class Utils {
     if (isEmpty(localLangObj)) return 0;
     const defaultSource = localLangObj[defaultLang];
     if (isEmpty(defaultSource)) return 0;
-    const transSourceObj: any = {};
-    Object.entries(localLangObj).map(([lang, obj]: any) => {
+
+    // 收集所有需要翻译的中文文案
+    const allNeedTranslationKeys = new Set<string>();
+
+    Object.entries(localLangObj).forEach(([lang, obj]: any) => {
       if (lang !== defaultLang) {
-        if (!transSourceObj[lang]) transSourceObj[lang] = {};
-        Object.keys(obj).forEach((k) => {
+        // 确保该语言包含默认语言的所有key
+        Object.keys(defaultSource).forEach((k) => {
+          if (!obj.hasOwnProperty(k)) {
+            obj[k] = "";
+          }
+        });
+
+        // 基于默认语言的所有key检查翻译需求
+        Object.keys(defaultSource).forEach((k) => {
           if (!obj[k]) {
+            // 空值需要翻译
             const keyStr = defaultSource[k];
             if (keyStr) {
-              transSourceObj[lang][keyStr] = obj[k];
+              allNeedTranslationKeys.add(keyStr);
             }
           }
         });
       }
     });
-    const keys = Object.keys(transSourceObj["en"] || {});
-    if (!keys.length) return 0;
-    return Math.ceil(keys.length / maxPerBatch);
+
+    const totalTranslationKeys = allNeedTranslationKeys.size;
+    if (!totalTranslationKeys) return 0;
+    return Math.ceil(totalTranslationKeys / maxPerBatch);
   }
 
   /**

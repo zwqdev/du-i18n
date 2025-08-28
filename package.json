@@ -82,6 +82,10 @@
       {
         "command": "extension.yz.i18n.mergeCommonKeys",
         "title": "合并重复值的key"
+      },
+      {
+        "command": "extension.yz.i18n.missingDetection",
+        "title": "翻译漏检"
       }
     ],
     "menus": {
@@ -136,6 +140,10 @@
         {
           "command": "extension.yz.i18n.setting",
           "group": "z_commands@20"
+        },
+        {
+          "command": "extension.yz.i18n.missingDetection",
+          "group": "5_cutcopypaste@30"
         }
       ]
     },
