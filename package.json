@@ -4,7 +4,7 @@
   "description": "vscode国际化多语言解决方案",
   "author": "oterman",
   "publisher": "oterman",
-  "version": "1.4.1",
+  "version": "1.4.2",
   "engines": {
     "vscode": "^1.59.0"
   },

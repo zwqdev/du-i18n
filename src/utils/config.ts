@@ -88,7 +88,7 @@ export class Config {
     this.jsonReg = /\.(json)$/; // json文件
     this.gjUserName = "yz_admin"; // 用户名
     this.gjPassword = "yz123456"; // 密码
-    this.transBatchSize = 10; // 默认翻译批次大小
+    this.transBatchSize = 5; // 默认翻译批次大小
     this.scanIgnoreGlobs = ["*.js", "*.ts"]; // 默认无忽略
     this.scanIgnoreRegexes = [];
     this.skipExtractCallees = ["track", "trackClick"]; // 默认跳过 track 调用内部的字符串提取，可自行在配置中覆盖

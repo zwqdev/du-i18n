@@ -25,7 +25,7 @@ const RegCache = new MapCache();
 const chineseCharReg = /[\u4e00-\u9fa5]/;
 let decorationType = null;
 const boundaryCodes = ['"', "'", "`"]; // 字符串边界
-const SPLIT = "---$$_$$---";
+const SPLIT = "---$$_$$---,";
 // 统一翻译批次大小默认值（可通过配置覆盖）
 export const DEFAULT_TRANS_BATCH_SIZE = 10;
 
@@ -777,6 +777,7 @@ export class Utils {
       return info;
     };
     const found: string[] = [];
+    const foundSet = new Set<string>(); // 添加去重集合
     const varObj: Record<string, { newKey: string; varList: string[] }> = {};
     const scriptCalleeName = quoteKeys[1] || "i18n.t";
     const jsxCalleeName = quoteKeys[0] || "$t";
@@ -796,22 +797,41 @@ export class Utils {
       return null;
     };
 
+    // 本次处理中的key映射，避免重复生成
+    const currentSessionKeys = new Map<string, string>();
+
     const allocateKey = (original: string) => {
-      // 首先尝试查找已存在的key
+      // 首先检查本次处理中是否已经为这个文本分配了key
+      if (currentSessionKeys.has(original)) {
+        return currentSessionKeys.get(original)!;
+      }
+
+      // 然后尝试查找已存在的key
       const existingKey = findExistingKey(original);
       if (existingKey) {
-        // 如果找到已存在的key，直接使用，但不添加到found数组（因为不需要生成新的翻译）
+        // 如果找到已存在的key，直接使用，并缓存到本次会话中
+        currentSessionKeys.set(original, existingKey);
         return existingKey;
       }
 
-      // 如果没有找到，生成新的key
-      const idx = found.length; // 局部索引
-      found.push(original);
+      // 如果没有找到，且本次处理中也没有，生成新的key
+      if (!foundSet.has(original)) {
+        foundSet.add(original);
+        found.push(original);
+      }
+
+      const idx = found.indexOf(original); // 使用实际在found数组中的索引
+      let newKey: string;
       // 如果提供了命名空间（例如在 Vue SFC 中希望使用 `${prefix}script.`），优先使用它并从 0 开始编号
       if (keyNamespace) {
-        return `${keyNamespace}${idx}`;
+        newKey = `${keyNamespace}${idx}`;
+      } else {
+        newKey = `${prefixKey}${keyOffset + idx}`; // 叠加偏移，确保与最终 foundList 全局序号一致
       }
-      return `${prefixKey}${keyOffset + idx}`; // 叠加偏移，确保与最终 foundList 全局序号一致
+
+      // 缓存到本次会话中
+      currentSessionKeys.set(original, newKey);
+      return newKey;
     };
 
     const replacements: Array<{
@@ -1204,6 +1224,10 @@ export class Utils {
           : /\b__never_match__\b/; // 无配置时永远不匹配
         let tplIndex = 0; // local counter for tpl keys (relative)
 
+        // Vue模板去重相关
+        const tplFoundSet = new Set<string>();
+        const tplSessionKeys = new Map<string, string>();
+
         // 查找已存在的key的辅助函数（Vue模板版本）
         const findExistingKeyLocal = (chineseText: string): string | null => {
           if (
@@ -1225,19 +1249,41 @@ export class Utils {
         };
 
         const allocateKeyLocal = (val: string) => {
-          // 首先尝试查找已存在的key
+          // 首先检查本次处理中是否已经为这个文本分配了key
+          if (tplSessionKeys.has(val)) {
+            return tplSessionKeys.get(val)!;
+          }
+
+          // 然后尝试查找已存在的key
           const existingKey = findExistingKeyLocal(val);
           if (existingKey) {
-            // 如果找到已存在的key，直接使用，但不添加到foundList（因为不需要生成新的翻译）
+            // 如果找到已存在的key，直接使用，并缓存到本次会话中
+            tplSessionKeys.set(val, existingKey);
             return existingKey;
           }
 
-          // 如果没有找到，生成新的key
-          const idx = tplIndex++;
-          foundList.push(`__TPL__${val}`); // 用特殊前缀占位，后面统一转换
+          // 如果没有找到，且本次处理中也没有，生成新的key
+          if (!tplFoundSet.has(val)) {
+            tplFoundSet.add(val);
+            foundList.push(`__TPL__${val}`); // 用特殊前缀占位，后面统一转换
+          }
+
+          // 找到在foundList中的实际索引（去除__TPL__前缀）
+          const actualIdx = foundList.findIndex(
+            (item) => item === `__TPL__${val}`
+          );
+          const tplOnlyIndex =
+            foundList
+              .slice(0, actualIdx + 1)
+              .filter((item) => item.startsWith("__TPL__")).length - 1;
+
           // Use computed tplStartBase to avoid reusing existing indices
-          const keyIndex = tplStartBase + idx;
-          return `${ctx.prefixKey}tpl.${keyIndex}`;
+          const keyIndex = tplStartBase + tplOnlyIndex;
+          const newKey = `${ctx.prefixKey}tpl.${keyIndex}`;
+
+          // 缓存到本次会话中
+          tplSessionKeys.set(val, newKey);
+          return newKey;
         };
         const traverseNodes = (children: any[]) => {
           if (!Array.isArray(children)) return;
