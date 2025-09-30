@@ -645,7 +645,7 @@ export class FileIO {
         const finalContent = { ...existingContent, ...newContent };
 
         // 写入文件
-        const formattedContent = JSON.stringify(finalContent, null, "\t");
+        const formattedContent = JSON.stringify(finalContent, null, 2);
         FileIO.writeFileToLine(langFilePath, formattedContent);
 
         processedFiles.push(langFilePath);
